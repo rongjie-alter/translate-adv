@@ -106,6 +106,7 @@ describe("parseBookHtml", () => {
 describe("parse.py --tl_meta attributes", () => {
   it("is detected", () => {
     expect(tourou.hasMeta).toBe(true);
+    expect(tourou.hasCharaMeta).toBe(true); // regenerated with the consolidated #chara-meta dict
   });
 
   it("supplies official character names per language", () => {
@@ -161,8 +162,8 @@ describe("parse.py --tl_meta attributes", () => {
   });
 
   it("reports hasCharaMeta false for legacy inline attributes, while names still resolve", () => {
-    expect(tourou.hasCharaMeta).toBe(false); // the real fixture predates this format
-
+    // The real fixture now carries the consolidated #chara-meta dict, so this
+    // legacy-inline-attribute case is covered with a synthetic data-parse-version="2" fixture.
     const html = `<body data-parse-version="2">
 <h3 id="ch1">ch1</h3>
 <div class="label" id="ch1_a">Label: ch1_a</div>
