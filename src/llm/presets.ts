@@ -54,7 +54,7 @@ export const PRESETS: Preset[] = [
     id: "gemini-flash",
     label: "Gemini Flash (Google AI Studio free tier)",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-    model: "gemini-flash-latest",
+    model: "gemini-3.6-flash",
     limits: { rpm: 5, rpd: 20, tpm: 250_000, maxInputTokens: 32_000, maxOutputTokens: 8_192 },
     charsPerToken: 1.0,
     quotaResetTz: "America/Los_Angeles",
