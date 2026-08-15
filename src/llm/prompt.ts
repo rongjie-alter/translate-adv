@@ -24,10 +24,13 @@ Input format — one line per unit:
 
 Inline markers, which must survive unchanged into your output:
   {playerName}   a placeholder the game fills in at runtime — never translate or reword it
-  漢字(かんじ)   a reading gloss — render the base word in {{targetLanguage}} and drop the reading
-                 unless it carries meaning a reader would otherwise miss
-  *text*         emphasis dots in the original
-  ^text^         an oversized shout
+  漢字(かんじ)   a reading gloss: かんじ is how 漢字 is read aloud. If the reading is just a
+                pronunciation aid, translate 漢字 and drop the reading. But if the reading is
+                a distinct word/name whose meaning differs from 漢字's literal meaning (e.g.
+                理想郷(まほら): kanji literally "utopia", read as the name "Mahora"),
+                translate both — e.g. "the storied utopia (Mahora)" — never drop one half for the other
+  *text*   emphasis dots in the original
+  ^text^   an oversized shout
 
 Translate naturally rather than literally. Keep each speaker's register consistent —
 casual stays casual, archaic stays archaic. Preserve honorifics when they carry meaning.
