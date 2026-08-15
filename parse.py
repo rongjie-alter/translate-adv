@@ -13,7 +13,7 @@ TL_META_LANGS = [
 ]
 
 # Bumped when the meaning of a data-* attribute changes, so the app can tell.
-TL_META_VERSION = 2
+TL_META_VERSION = 3
 
 def escapeAttr(s):
   return s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
@@ -213,6 +213,12 @@ document.querySelector("#ruby-btn").onclick = function() {
     if args.tl_meta and not self.tl_meta:
       print(f"warning: {args.common} not found, writing HTML without translation metadata")
 
+    # Deduplicated character metadata: assigned once per distinct Arg1 sprite id,
+    # referenced by every line via data-chara-id instead of repeating the same
+    # official names inline on every line that character speaks.
+    self.chara_ids = {}
+    self.chara_meta = {}
+
     if self.tl_name or self.tl_meta:
       self.process_common(args.common)
 
@@ -278,6 +284,10 @@ document.querySelector("#ruby-btn").onclick = function() {
         skip -= 1
       else:
         self.dumpScenario(self.getName(k), self.chapters[k])
+
+    if self.tl_meta and self.chara_meta:
+      self.write(f'<script type="application/json" id="chara-meta">'
+                 f'{json.dumps(self.chara_meta, ensure_ascii=False)}</script>')
     self.write(self.FOOTER)
 
   def getName(self, s):
@@ -404,9 +414,7 @@ document.querySelector("#ruby-btn").onclick = function() {
 
     arg2 = c.get("Arg2", "")
     pose = 'hide sprite' if arg2 == '<Off>' else arg2
-    pairs = [("chara", arg1), ("pose", pose)]
-    for code, name in self.officialNames(arg1).items():
-      pairs.append((f"chara-{code}", name))
+    pairs = [("chara-id", self.charaId(arg1)), ("pose", pose)]
     return self.metaAttrs(pairs)
 
   def escapeLine(self, s, size_left_replace=r'<span style="font-size: calc(\1px * 0.5)">', size_right_replace="</span>"):
@@ -560,6 +568,16 @@ document.querySelector("#ruby-btn").onclick = function() {
       if value and value != display:
         out[code] = value
     return out
+
+  def charaId(self, arg1):
+    """Assign (and cache) a short id for a sprite id, recording its metadata once."""
+    if arg1 not in self.chara_ids:
+      cid = str(len(self.chara_ids))
+      self.chara_ids[arg1] = cid
+      entry = {"chara": arg1}
+      entry.update(self.officialNames(arg1))
+      self.chara_meta[cid] = entry
+    return self.chara_ids[arg1]
 
   def metaAttrs(self, pairs):
     """Render `data-*` attributes, skipping empties."""

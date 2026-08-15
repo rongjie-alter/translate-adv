@@ -11,7 +11,7 @@
  * generated files keep working.
  */
 import { toCompact } from "./inline";
-import { hash8, hashFile, type Book, type Chapter, type Lang, type SceneNode, type Speaker } from "./model";
+import { hash8, hashFile, LANGS, type Book, type Chapter, type Lang, type SceneNode, type Speaker } from "./model";
 
 /** `火のテンジン (通常):` -> name + pose. The pose is absent under `--tl_name`. */
 const CHARA_TEXT = /^(.*?)(?:\s*\((.*)\))?\s*[:：]\s*$/;
@@ -22,10 +22,30 @@ const META_LANG_ATTR: Record<Lang, string> = {
   "zh-hant": "data-chara-zh-hant",
 };
 
+/** One entry of the `#chara-meta` dictionary parse.py embeds: id -> official names. */
+interface CharaMetaEntry {
+  chara: string;
+  en?: string;
+  "zh-hans"?: string;
+  "zh-hant"?: string;
+}
+
+/** Reads the consolidated `<script id="chara-meta">` dict, if present. */
+function readCharaMeta(doc: Document): { map: Record<string, CharaMetaEntry>; present: boolean } {
+  const script = doc.getElementById("chara-meta");
+  if (!script?.textContent) return { map: {}, present: false };
+  try {
+    return { map: JSON.parse(script.textContent), present: true };
+  } catch {
+    return { map: {}, present: false };
+  }
+}
+
 export function parseBookHtml(file: string, html: string): Book {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const chapters: Chapter[] = [];
   const hasMeta = doc.body.hasAttribute("data-parse-version");
+  const { map: charaMeta, present: hasCharaMeta } = readCharaMeta(doc);
 
   let chapter: Chapter | null = null;
   let label = "";
@@ -69,7 +89,7 @@ export function parseBookHtml(file: string, html: string): Book {
           break;
         }
         case "text": {
-          const speaker = readSpeaker(el);
+          const speaker = readSpeaker(el, charaMeta);
           const { text, sizes } = toCompact(el, (c) => {
             const k = c.className;
             return k === "chara" || k.includes("voice");
@@ -125,12 +145,14 @@ export function parseBookHtml(file: string, html: string): Book {
   };
 
   walk(doc.body);
-  return { file, srcHash: hashFile(html), chapters, hasMeta };
+  return { file, srcHash: hashFile(html), chapters, hasMeta, hasCharaMeta };
 }
 
-function readSpeaker(el: Element): Speaker | undefined {
+function readSpeaker(el: Element, charaMeta: Record<string, CharaMetaEntry>): Speaker | undefined {
   const span = el.querySelector(".chara");
-  const metaName = el.getAttribute("data-chara");
+  const charaId = el.getAttribute("data-chara-id");
+  const meta = charaId ? charaMeta[charaId] : undefined;
+  const metaName = meta?.chara ?? el.getAttribute("data-chara");
   if (!span && !metaName) return undefined;
 
   const raw = (span?.textContent ?? "").trim();
@@ -139,9 +161,16 @@ function readSpeaker(el: Element): Speaker | undefined {
   const pose = el.getAttribute("data-pose") ?? m?.[2]?.trim();
 
   const tl: Partial<Record<Lang, string>> = {};
-  for (const [lang, attr] of Object.entries(META_LANG_ATTR) as [Lang, string][]) {
-    const v = el.getAttribute(attr);
-    if (v) tl[lang] = v;
+  if (meta) {
+    for (const lang of LANGS) {
+      const v = meta[lang];
+      if (v) tl[lang] = v;
+    }
+  } else {
+    for (const [lang, attr] of Object.entries(META_LANG_ATTR) as [Lang, string][]) {
+      const v = el.getAttribute(attr);
+      if (v) tl[lang] = v;
+    }
   }
 
   return {

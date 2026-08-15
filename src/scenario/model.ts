@@ -113,6 +113,8 @@ export interface Book {
   chapters: Chapter[];
   /** True when the HTML carried `parse.py --tl_meta` attributes. */
   hasMeta: boolean;
+  /** True when the HTML carried the consolidated `data-chara-id` + `#chara-meta` JSON dict. */
+  hasCharaMeta: boolean;
 }
 
 /** Node kinds that carry text needing translation. */

@@ -146,6 +146,11 @@ progress { width: 100%; height: 0.6rem; }
 .conflicts { margin: 1.25rem; padding: 1rem; border: 1px solid #e8d79a; background: #fff5d6; border-radius: 8px; }
 .conflicts ul { margin: 0.5rem 0; }
 
+.meta-warning { padding: 1rem; border: 1px solid #e8d79a; background: #fff5d6; border-radius: 8px; max-width: 28rem; }
+.meta-warning::backdrop { background: #0006; }
+.meta-warning ul { margin: 0.5rem 0; }
+.meta-warning button { margin-top: 0.5rem; }
+
 .dropzone {
   position: fixed;
   inset: 0;

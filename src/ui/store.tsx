@@ -45,6 +45,8 @@ export interface Store {
   folderName: string | null;
   toasts: Toast[];
   conflicts: MergeConflict[];
+  /** Filenames just uploaded that lack the consolidated `#chara-meta` JSON dict. */
+  metaWarningFiles: string[];
 
   setView(v: View): void;
   setActiveSource(id: string | null): void;
@@ -59,6 +61,7 @@ export interface Store {
   syncFolder(): Promise<void>;
   toast(message: string, kind?: Toast["kind"]): void;
   dismissConflicts(): void;
+  dismissMetaWarning(): void;
   activePreset(): Preset;
   apiKey(): string;
   calibrationFor(model: string, lang: Lang): Calibration;
@@ -84,6 +87,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
   const [folderName, setFolderName] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [conflicts, setConflicts] = useState<MergeConflict[]>([]);
+  const [metaWarningFiles, setMetaWarningFiles] = useState<string[]>([]);
 
   const toast = useCallback((message: string, kind: Toast["kind"] = "info") => {
     const t = { id: Date.now() + Math.random(), kind, message };
@@ -121,6 +125,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
   const addFiles = useCallback(
     async (files: File[]) => {
       const importedArtifacts: Artifact[] = [];
+      const noCharaMeta: string[] = [];
       for (const file of files) {
         const text = await file.text();
         try {
@@ -133,6 +138,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
             toast(`${file.name} has no chapters — is it a .book.html from parse.py?`, "error");
             continue;
           }
+          if (!book.hasCharaMeta) noCharaMeta.push(file.name);
           const rec: SourceRecord = {
             id: `${file.name}:${hashFile(text)}`,
             file: file.name,
@@ -149,6 +155,8 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
           toast(`${file.name}: ${(e as Error).message}`, "error");
         }
       }
+
+      if (noCharaMeta.length) setMetaWarningFiles(noCharaMeta);
 
       if (importedArtifacts.length) {
         const existing = await db.listArtifacts();
@@ -238,6 +246,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     folderName,
     toasts,
     conflicts,
+    metaWarningFiles,
     setView,
     setActiveSource,
     saveSettings,
@@ -251,6 +260,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     syncFolder,
     toast,
     dismissConflicts: () => setConflicts([]),
+    dismissMetaWarning: () => setMetaWarningFiles([]),
     activePreset: () => findPreset(settings.presets, settings.presetId),
     apiKey: () => settings.apiKeys[findPreset(settings.presets, settings.presetId).baseUrl] ?? "",
     calibrationFor: (model, lang) =>

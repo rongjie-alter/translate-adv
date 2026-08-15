@@ -143,6 +143,36 @@ describe("parse.py --tl_meta attributes", () => {
     expect(speakers.some((s) => s.jp === "タサブロウ")).toBe(true);
     expect(speakers.every((s) => !s.tl)).toBe(true);
   });
+
+  it("resolves official names through the consolidated data-chara-id + #chara-meta dict", () => {
+    const html = `<body data-parse-version="3">
+<h3 id="ch1">ch1</h3>
+<div class="label" id="ch1_a">Label: ch1_a</div>
+<div class="text" data-chara-id="0" data-pose="通常"><span class="chara">花子 (通常):</span> こんにちは</div>
+<script type="application/json" id="chara-meta">{"0":{"chara":"花子","en":"Hanako","zh-hans":"花子","zh-hant":"花子"}}</script>
+</body>`;
+    const book = parseBookHtml("synthetic.book.html", html);
+    expect(book.hasMeta).toBe(true);
+    expect(book.hasCharaMeta).toBe(true);
+    const speaker = chapterSpeakers(book.chapters[0])[0];
+    expect(speaker.jp).toBe("花子");
+    expect(speaker.pose).toBe("通常");
+    expect(speaker.tl).toEqual({ en: "Hanako", "zh-hans": "花子", "zh-hant": "花子" });
+  });
+
+  it("reports hasCharaMeta false for legacy inline attributes, while names still resolve", () => {
+    expect(tourou.hasCharaMeta).toBe(false); // the real fixture predates this format
+
+    const html = `<body data-parse-version="2">
+<h3 id="ch1">ch1</h3>
+<div class="label" id="ch1_a">Label: ch1_a</div>
+<div class="text" data-chara="花子" data-pose="通常" data-chara-en="Hanako"><span class="chara">花子 (通常):</span> こんにちは</div>
+</body>`;
+    const book = parseBookHtml("legacy.book.html", html);
+    expect(book.hasCharaMeta).toBe(false);
+    const speaker = chapterSpeakers(book.chapters[0])[0];
+    expect(speaker.tl?.en).toBe("Hanako");
+  });
 });
 
 describe("makeLabelMap", () => {

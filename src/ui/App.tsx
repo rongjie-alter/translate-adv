@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { LibraryView } from "./LibraryView";
 import { ScanView } from "./ScanView";
 import { SettingsView } from "./SettingsView";
@@ -17,6 +17,14 @@ export function App() {
   const store = useStore();
   const translation = useTranslation();
   const [dragging, setDragging] = useState(false);
+  const metaWarningRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = metaWarningRef.current;
+    if (!dialog) return;
+    if (store.metaWarningFiles.length) dialog.showModal();
+    else dialog.close();
+  }, [store.metaWarningFiles]);
 
   // One drop target for the whole window: source books and translation files alike.
   useEffect(() => {
@@ -115,6 +123,32 @@ export function App() {
       </div>
 
       {dragging ? <div class="dropzone">Drop .book.html or .tl.json files</div> : null}
+
+      <dialog
+        class="meta-warning"
+        ref={metaWarningRef}
+        onClose={store.dismissMetaWarning}
+        onCancel={store.dismissMetaWarning}
+      >
+        <strong>Generated without consolidated character data</strong>
+        <p>
+          {store.metaWarningFiles.length === 1
+            ? store.metaWarningFiles[0]
+            : `${store.metaWarningFiles.length} file(s)`}{" "}
+          {store.metaWarningFiles.length === 1 ? "was" : "were"} generated before{" "}
+          <code>parse.py</code> started embedding the consolidated character-name dictionary.
+          Translation consistency may be lower. Regenerate with the latest <code>parse.py</code>{" "}
+          for best results.
+        </p>
+        {store.metaWarningFiles.length > 1 ? (
+          <ul>
+            {store.metaWarningFiles.map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
+        ) : null}
+        <button onClick={() => metaWarningRef.current?.close()}>Continue anyway</button>
+      </dialog>
     </div>
   );
 }
