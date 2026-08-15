@@ -70,6 +70,41 @@ Structure is sent as context but never echoed back; that roughly halves output t
 the binding constraint on the free tiers this targets. Labels are shortened to short aliases
 (`labels.ts`) before sending, because `quest_evMain_touroumatsuri2026_0_a_alt1` is pure cost.
 
+### Retranslating selected lines
+
+`retranslate.ts` redoes a hand-picked set of units without redoing the chapter. It is driven by
+the **`Artifact`, not the `Chapter`** — an artifact carries `src`, `speaker`, `kind`, `to` and the
+structure markers, so a retry works on an imported `.tl.json` with no `.book.html` loaded
+(`artifactNodes`/`artifactLabelIds`/`artifactSpeakers` in `exchange.ts` rebuild what the wire needs).
+This is only possible because `jobId(book, chapter, lang)` and `artifactKey(...)` produce the
+identical string, so unit rows land in the right place either way.
+
+Selected lines are grouped, nearby groups merge, and each group is sent with its neighbours as `~`
+context — the *existing translation* where there is one, falling back to the Japanese. Context
+costs input tokens and produces no output, so `planRetranslate` weighs `maxInputTokens` and
+`maxOutputTokens` **separately** via `budgetParts` rather than the chunker's single `chunkBudget`;
+a naive combined budget splits requests that would comfortably have fit. Non-consecutive groups are
+separated by `~ [...]`.
+
+**None of this adds a wire token** — `~` is already documented as "not content" in the prompt and
+already skipped by `parseResponse` and `mock_server.py`, so the four-file contract is untouched.
+`RETRANSLATE_INSTRUCTION` and the user's per-retry note are appended at send time the way
+`REPAIR_INSTRUCTION` is, deliberately *not* added to `DEFAULT_SYSTEM_PROMPT`, because that template
+is user-editable and `loadSettings` never migrates a stored copy forward.
+
+`runRetranslate` returns proposals and writes nothing; `ReviewView` shows old vs new and the user
+keeps or discards each line, because a different model can easily come back worse. Accepted lines
+go through `db.putUnits(..., { keepPrevious: true })` (one level of history on `UnitRecord.prev`,
+enough for `revertUnits`) and `applyTranslations`, which patches the artifact in place instead of
+calling `buildArtifact` — the latter needs the source `Chapter`, which may not exist. Per-line
+provenance lives on `units[].model`, set only when it differs from the chapter's; `Artifact.model`
+is deliberately left naming the model that did the bulk.
+
+`send.ts` holds the quota/retry/repair machinery both runners share. Keep it that way — the
+`check() → reserve() → call → settle()` order is test-enforced, and a retry must reserve against
+the **chosen** preset's limiter slot, not the active one, or it silently spends another endpoint's
+free-tier quota.
+
 ### The parse.py ↔ scraper contract
 
 `parse.py --tl_meta` (on by default; `--no_tl_meta` restores the pre-existing output byte-for-byte)

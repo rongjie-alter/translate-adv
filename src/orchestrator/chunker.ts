@@ -64,9 +64,23 @@ export function chunkNodes(nodes: SceneNode[], opts: ChunkOptions): Chunk[] {
  * Japanese, or its answer gets truncated halfway.
  */
 export function chunkBudget(opts: ChunkOptions): number {
-  const byInput = opts.maxInputTokens - opts.systemTokens;
-  const byOutput = Math.floor((opts.maxOutputTokens * 0.85) / Math.max(0.2, opts.outputRatio));
+  const { byInput, byOutput } = budgetParts(opts);
   return Math.max(200, Math.min(byInput, byOutput));
+}
+
+/**
+ * The two limits behind `chunkBudget`, kept separate.
+ *
+ * A chunk pays both at once, so collapsing them to one number is right for the
+ * chunker. A targeted retranslation does not: most of its body is `~` context that
+ * costs input tokens and produces no output at all, so it has to weigh the two
+ * independently or it would split requests that would comfortably have fit.
+ */
+export function budgetParts(opts: ChunkOptions): { byInput: number; byOutput: number } {
+  return {
+    byInput: opts.maxInputTokens - opts.systemTokens,
+    byOutput: Math.floor((opts.maxOutputTokens * 0.85) / Math.max(0.2, opts.outputRatio)),
+  };
 }
 
 function makeChunk(nodes: SceneNode[], cost: number[], start: number, end: number): Chunk {

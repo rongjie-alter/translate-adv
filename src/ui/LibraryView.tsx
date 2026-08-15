@@ -93,6 +93,7 @@ export function LibraryView() {
                     <td>{a.model}</td>
                     <td>{a.generatedAt ? new Date(a.generatedAt).toLocaleDateString() : "—"}</td>
                     <td class="actions">
+                      <button onClick={() => store.openReview(artifactKey(a))}>Review</button>
                       <button onClick={() => download(artifactFileName(a), serializeArtifact(a))}>
                         Export
                       </button>

@@ -62,7 +62,7 @@ pnpm test
 | `src/orchestrator/` | Chunking and the job runner |
 | `src/storage/` | IndexedDB, the `.tl.json` exchange format, optional folder sync |
 | `src/combine/` | Bilingual HTML output |
-| `src/ui/` | Scan / Translate / Library / Settings |
+| `src/ui/` | Scan / Translate / Review / Library / Settings |
 
 A few decisions worth knowing about:
 
@@ -80,6 +80,12 @@ A few decisions worth knowing about:
   instead of re-paying for work already done.
 - **Exchange files are self-contained.** A `.tl.json` carries its own source text and branch
   structure, so whoever assembles the final file needs neither the original book nor a key.
+- **Bad lines can be redone one at a time.** **Review** shows a chapter as Japanese/translation
+  pairs; tick the lines that came out wrong and retranslate only those, optionally with a different
+  model and a note ("this is a character name — keep it"). Neighbouring lines ride along as context
+  so the model can see what it misread, and scattered lines are packed into as few calls as the
+  token budget allows. Results are shown old-vs-new and applied per line. Because it reads the
+  `.tl.json` rather than the book, it also works on a chapter someone else translated.
 
 ## Sharing the cost
 

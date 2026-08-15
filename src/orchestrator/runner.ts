@@ -7,14 +7,15 @@
  * ever sent when the limiter says there is quota for it, because on a free tier a
  * throttled request is quota burned for nothing.
  */
-import { backoffMs, chat, LlmError, sleep, type ChatResponse } from "../llm/client";
+import type { chat } from "../llm/client";
 import { calibrate, estimateTokens, type Calibration } from "../llm/estimate";
 import type { Quota } from "../llm/limiter";
-import { buildSystemPrompt, REPAIR_INSTRUCTION } from "../llm/prompt";
+import { buildSystemPrompt } from "../llm/prompt";
 import type { Lang, Speaker } from "../scenario/model";
-import { parseResponse, serializeChunk, serializeRepair, type WireLine } from "../scenario/serialize";
+import { serializeChunk } from "../scenario/serialize";
 import type { LabelMap } from "../scenario/labels";
 import type { Chunk } from "./chunker";
+import { isFatal, translateWire } from "./send";
 import { type Job, type JobChunk } from "./job";
 
 export type RunEvent =
@@ -46,10 +47,8 @@ export interface RunnerDeps {
   chat?: typeof chat;
 }
 
-const MAX_ATTEMPTS = 4;
-const MAX_REPAIRS = 2;
 /** Translated lines carried into the next chunk so the model keeps its footing. */
-const CONTEXT_LINES = 3;
+export const CONTEXT_LINES = 3;
 
 export async function runJob(
   job: Job,
@@ -58,7 +57,6 @@ export async function runJob(
   deps: RunnerDeps,
   signal: AbortSignal,
 ): Promise<Job> {
-  const call = deps.chat ?? chat;
   const system = buildSystemPrompt(deps.systemPromptTemplate, lang, deps.speakers);
   let context: string[] = [];
   let calibration = deps.calibration;
@@ -80,15 +78,15 @@ export async function runJob(
       estimateTokens(wire.text, calibration.charsPerToken);
 
     try {
-      const { translations, missing, usage } = await translateChunk({
+      const { translations, missing, usage } = await translateWire({
         system,
         wire,
         estimate,
         charsPerToken: calibration.charsPerToken,
+        index: record.index,
+        label: "Chunk",
         deps,
-        call,
         signal,
-        record,
       });
 
       await deps.saveUnits(record, translations);
@@ -141,104 +139,4 @@ export async function runJob(
   const failed = job.chunks.filter((c) => c.status === "failed").length;
   deps.onEvent({ type: "done", failed });
   return job;
-}
-
-function isFatal(e: unknown): boolean {
-  return e instanceof LlmError && !e.retryable;
-}
-
-async function translateChunk(args: {
-  system: string;
-  wire: { text: string; lines: WireLine[] };
-  estimate: number;
-  charsPerToken: number;
-  deps: RunnerDeps;
-  call: typeof chat;
-  signal: AbortSignal;
-  record: JobChunk;
-}) {
-  const { system, wire, estimate, deps, signal, record } = args;
-
-  const first = await send(system, wire.text, estimate, args);
-  const parsed = parseResponse(first.content, wire.lines);
-  const translations = parsed.translations;
-  let missing = parsed.missing;
-  const usage = { ...first.usage };
-
-  for (let round = 0; round < MAX_REPAIRS && missing.length; round++) {
-    deps.onEvent({ type: "repair", index: record.index, missing: missing.length });
-    const repairSystem = `${system}\n\n${REPAIR_INSTRUCTION}`;
-    const body = serializeRepair(missing);
-    const est = estimateTokens(repairSystem + body, args.charsPerToken);
-    const res = await send(repairSystem, body, est, args);
-    usage.promptTokens += res.usage.promptTokens;
-    usage.completionTokens += res.usage.completionTokens;
-    const again = parseResponse(res.content, missing);
-    for (const [uid, text] of again.translations) translations.set(uid, text);
-    if (again.missing.length === missing.length) break; // making no progress
-    missing = again.missing;
-  }
-
-  if (first.finishReason === "length") {
-    deps.onEvent({
-      type: "log",
-      message: `Chunk ${record.index + 1} hit the output limit; ${missing.length} line(s) needed repair.`,
-    });
-  }
-
-  signal.throwIfAborted();
-  return { translations, missing, usage };
-}
-
-/** One request, with quota waiting and retry/backoff around it. */
-async function send(
-  system: string,
-  user: string,
-  estimate: number,
-  args: { deps: RunnerDeps; call: typeof chat; signal: AbortSignal; record: JobChunk },
-): Promise<ChatResponse> {
-  const { deps, call, signal, record } = args;
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    signal.throwIfAborted();
-
-    for (;;) {
-      const avail = deps.limiter.check(estimate);
-      if (!avail.waitMs) break;
-      deps.onEvent({ type: "waiting", ms: avail.waitMs, reason: avail.reason ?? "quota" });
-      if (avail.reason === "rpd") {
-        throw new LlmError(
-          "Daily request quota is used up. The job will resume from here once it resets.",
-          429,
-          false,
-        );
-      }
-      await sleep(Math.min(avail.waitMs, 15_000), signal);
-    }
-
-    deps.limiter.reserve(estimate);
-    try {
-      const res = await call({
-        baseUrl: deps.baseUrl,
-        apiKey: deps.apiKey,
-        model: deps.model,
-        system,
-        user,
-        maxOutputTokens: deps.maxOutputTokens,
-        signal,
-      });
-      deps.limiter.settle(estimate, res.usage.promptTokens || estimate);
-      return res;
-    } catch (e) {
-      if (signal.aborted) throw e;
-      lastError = e;
-      if (!(e instanceof LlmError) || !e.retryable) throw e;
-      if (e.status === 429) deps.limiter.penalize(e.retryAfter ?? 30);
-      const wait = backoffMs(attempt, e.retryAfter);
-      deps.onEvent({ type: "retry", index: record.index, attempt: attempt + 1, error: e.message });
-      await sleep(wait, signal);
-    }
-  }
-  throw lastError;
 }

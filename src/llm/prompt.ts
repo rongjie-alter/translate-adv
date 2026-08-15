@@ -77,3 +77,22 @@ export function glossaryBlock(speakers: Speaker[], lang: Lang): string {
 export const REPAIR_INSTRUCTION =
   "Some lines were missing from your last reply. Translate exactly these lines, " +
   "using the same numbers and the same output rules.";
+
+/**
+ * Appended at send time for a targeted retranslation, the same way
+ * `REPAIR_INSTRUCTION` is — deliberately *not* part of `DEFAULT_SYSTEM_PROMPT`,
+ * because that template is user-editable and `loadSettings` never migrates a
+ * stored copy forward.
+ */
+export const RETRANSLATE_INSTRUCTION =
+  "These lines have already been translated once and are being redone because the " +
+  "previous translation was not good enough. The `~` lines are surrounding context: " +
+  "read them for tone, names and continuity, but never output them. `~ [...]` marks a " +
+  "jump to a different part of the scene. Translate only the numbered lines, following " +
+  "the same output rules.";
+
+/** A user's free-text note for one retranslation, as a system-prompt block. */
+export function hintBlock(hint: string): string {
+  const trimmed = hint.trim();
+  return trimmed ? `\n\nAdditional instructions for these lines:\n${trimmed}` : "";
+}

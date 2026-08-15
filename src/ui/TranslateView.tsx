@@ -6,7 +6,13 @@ import { jobProgress } from "../orchestrator/job";
 import { useActiveBook, useStore } from "./store";
 import type { useTranslation } from "./useTranslation";
 
-export function TranslateView({ translation }: { translation: ReturnType<typeof useTranslation> }) {
+export function TranslateView({
+  translation,
+  busy,
+}: {
+  translation: ReturnType<typeof useTranslation>;
+  busy: boolean;
+}) {
   const store = useStore();
   const active = useActiveBook();
   const s = translation.state;
@@ -51,7 +57,15 @@ export function TranslateView({ translation }: { translation: ReturnType<typeof 
             </p>
           ) : null}
           {s.error ? <p class="warn">{s.error}</p> : null}
-          {s.finished && !s.error ? <p class="ok">Done. Saved to the library.</p> : null}
+          {s.finished && !s.error ? (
+            <p class="ok">
+              Done. Saved to the library.{" "}
+              {/* `jobId` is `book::chapter::lang` — the same string as `artifactKey`. */}
+              <button class="link" onClick={() => store.openReview(s.jobId)}>
+                Review {s.chapter}
+              </button>
+            </p>
+          ) : null}
 
           <ol class="log">
             {s.log
@@ -86,7 +100,7 @@ export function TranslateView({ translation }: { translation: ReturnType<typeof 
                     {p.failed ? `, ${p.failed} failed` : ""}
                   </span>
                   <button
-                    disabled={translation.running || !source || !book}
+                    disabled={busy || !source || !book}
                     title={source ? "" : "Load the original .book.html again to continue"}
                     onClick={() => void translation.start(source!, book!, j.chapter, j.lang)}
                   >

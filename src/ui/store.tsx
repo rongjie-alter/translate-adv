@@ -25,7 +25,7 @@ import { hashFile, type Book, type Lang } from "../scenario/model";
 import { parseBookHtml } from "../scenario/parseHtml";
 import type { Job } from "../orchestrator/job";
 
-export type View = "scan" | "translate" | "library" | "settings";
+export type View = "scan" | "translate" | "review" | "library" | "settings";
 
 export interface Toast {
   id: number;
@@ -47,8 +47,21 @@ export interface Store {
   conflicts: MergeConflict[];
   /** Filenames just uploaded that lack the consolidated `#chara-meta` JSON dict. */
   metaWarningFiles: string[];
+  /** `artifactKey` of the chapter open on the Review screen. */
+  reviewKey: string | null;
+  /**
+   * Unit ids picked for retranslation. Kept here rather than in `ReviewView`
+   * because `App` unmounts the view on every tab switch, and a hand-built
+   * selection of forty lines must survive a trip to Settings for an API key.
+   */
+  reviewSelection: ReadonlySet<string>;
 
   setView(v: View): void;
+  openReview(key: string | null): void;
+  /** Accepts an updater, so rapid toggles cannot overwrite each other. */
+  setReviewSelection(
+    next: ReadonlySet<string> | ((prev: ReadonlySet<string>) => ReadonlySet<string>),
+  ): void;
   setActiveSource(id: string | null): void;
   saveSettings(patch: Partial<Settings>): Promise<void>;
   addFiles(files: File[]): Promise<void>;
@@ -63,8 +76,9 @@ export interface Store {
   dismissConflicts(): void;
   dismissMetaWarning(): void;
   activePreset(): Preset;
-  apiKey(): string;
-  calibrationFor(model: string, lang: Lang): Calibration;
+  /** Key for `preset`, or for the active one. A retry may target another endpoint. */
+  apiKey(preset?: Preset): string;
+  calibrationFor(model: string, lang: Lang, preset?: Preset): Calibration;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -88,6 +102,18 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [conflicts, setConflicts] = useState<MergeConflict[]>([]);
   const [metaWarningFiles, setMetaWarningFiles] = useState<string[]>([]);
+  const [reviewKey, setReviewKey] = useState<string | null>(null);
+  const [reviewSelection, setReviewSelection] = useState<ReadonlySet<string>>(new Set());
+
+  const openReview = useCallback((key: string | null) => {
+    // Unit ids are only meaningful within one chapter, so switching chapters
+    // must not carry a selection across.
+    setReviewKey((prev) => {
+      if (prev !== key) setReviewSelection(new Set());
+      return key;
+    });
+    setView("review");
+  }, []);
 
   const toast = useCallback((message: string, kind: Toast["kind"] = "info") => {
     const t = { id: Date.now() + Math.random(), kind, message };
@@ -247,7 +273,11 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     toasts,
     conflicts,
     metaWarningFiles,
+    reviewKey,
+    reviewSelection,
     setView,
+    openReview,
+    setReviewSelection,
     setActiveSource,
     saveSettings,
     addFiles,
@@ -262,10 +292,11 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     dismissConflicts: () => setConflicts([]),
     dismissMetaWarning: () => setMetaWarningFiles([]),
     activePreset: () => findPreset(settings.presets, settings.presetId),
-    apiKey: () => settings.apiKeys[findPreset(settings.presets, settings.presetId).baseUrl] ?? "",
-    calibrationFor: (model, lang) =>
+    apiKey: (preset) =>
+      settings.apiKeys[(preset ?? findPreset(settings.presets, settings.presetId)).baseUrl] ?? "",
+    calibrationFor: (model, lang, preset) =>
       settings.calibration[`${model}:${lang}`] ?? {
-        charsPerToken: findPreset(settings.presets, settings.presetId).charsPerToken,
+        charsPerToken: (preset ?? findPreset(settings.presets, settings.presetId)).charsPerToken,
         outputRatio: OUTPUT_RATIO[lang],
         samples: 0,
       },

@@ -4,7 +4,7 @@ import { renderCompact, toCompact } from "./inline";
 import { makeLabelMap } from "./labels";
 import { isTranslatable, type SelectNode, type TextNode } from "./model";
 import { chapterSpeakers, parseBookHtml } from "./parseHtml";
-import { parseResponse, serializeChunk } from "./serialize";
+import { parseResponse, serializeChunk, serializeSelection } from "./serialize";
 
 const tourou = parseBookHtml(
   "touroumatsuri2026.book.html",
@@ -234,6 +234,61 @@ describe("serializeChunk", () => {
       context: ["Previously translated line."],
     });
     expect(withCtx.text.startsWith("~ Previously translated line.")).toBe(true);
+  });
+});
+
+describe("serializeSelection", () => {
+  const ch = tourou.chapters[0];
+  const labels = makeLabelMap(
+    ch.nodes.flatMap((n) => (n.kind === "label" ? [n.id] : n.kind === "jump" ? [n.to] : [])),
+  );
+  const targets = ch.nodes.filter(isTranslatable);
+
+  const groups = [
+    {
+      items: [
+        { role: "context" as const, text: "Something said earlier." },
+        { role: "target" as const, node: targets[0] },
+      ],
+    },
+    {
+      items: [
+        { role: "context" as const, text: "Something said much later." },
+        { role: "target" as const, node: targets[10] },
+      ],
+    },
+  ];
+  const wire = serializeSelection(groups, { labels, lang: "en" });
+
+  it("numbers ascending across groups so one parse maps them all", () => {
+    expect(wire.lines.map((l) => l.n)).toEqual([1, 2]);
+    expect(wire.lines.map((l) => l.uid)).toEqual([targets[0].uid, targets[10].uid]);
+  });
+
+  it("marks the jump between groups with an existing token", () => {
+    expect(wire.text.split("\n").filter((l) => l === "~ [...]")).toHaveLength(1);
+    // `~` is what the prompt, parseResponse and mock_server already skip.
+    expect(wire.text).toMatch(/^~ /m);
+  });
+
+  it("never numbers a context line", () => {
+    const numbered = wire.text.split("\n").filter((l) => /^\d+ /.test(l));
+    expect(numbered).toHaveLength(2);
+  });
+
+  it("round-trips through parseResponse", () => {
+    const reply = wire.lines.map((l) => `${l.n} translated ${l.n}`).join("\n");
+    const parsed = parseResponse(reply, wire.lines);
+    expect(parsed.missing).toEqual([]);
+    expect(parsed.translations.get(targets[0].uid)).toBe("translated 1");
+    expect(parsed.translations.get(targets[10].uid)).toBe("translated 2");
+  });
+
+  it("ignores a model that echoes the context back", () => {
+    const reply = `~ Something said earlier.\n1 first\n~ [...]\n2 second`;
+    const parsed = parseResponse(reply, wire.lines);
+    expect(parsed.translations.get(targets[0].uid)).toBe("first");
+    expect(parsed.translations.get(targets[10].uid)).toBe("second");
   });
 });
 

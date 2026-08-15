@@ -49,6 +49,15 @@ export interface UnitRecord {
   jobId: string;
   uid: string;
   text: string;
+  /**
+   * The translation this one replaced. One level only — enough to revert a
+   * retranslation that came back worse, not a version log.
+   */
+  prev?: string;
+  /** Set only when this line came from a different model than the job's. */
+  model?: string;
+  /** When this text was written. */
+  at?: number;
 }
 
 export function defaultSettings(): Settings {
@@ -160,18 +169,102 @@ export async function deleteJob(id: string): Promise<void> {
 
 // -- units ------------------------------------------------------------------
 
-export async function putUnits(jobId: string, translations: Map<string, string>): Promise<void> {
+export interface PutUnitsOptions {
+  /** Keep the text being replaced on `prev`, so a bad retranslation can be undone. */
+  keepPrevious?: boolean;
+  /** Stamp provenance; recorded on every row written. */
+  model?: string;
+  at?: number;
+}
+
+/**
+ * Fold one write into an existing row.
+ *
+ * Exported and pure so the interesting part is testable without an IndexedDB
+ * implementation — the transaction wrapper around it stays untested, like the
+ * rest of this file.
+ */
+export function mergeUnitRecord(
+  old: UnitRecord | undefined,
+  next: { jobId: string; uid: string; text: string },
+  opts: PutUnitsOptions = {},
+): UnitRecord {
+  const prev = opts.keepPrevious && old && old.text !== next.text ? old.text : old?.prev;
+  return {
+    key: `${next.jobId}::${next.uid}`,
+    jobId: next.jobId,
+    uid: next.uid,
+    text: next.text,
+    ...(prev !== undefined ? { prev } : {}),
+    ...(opts.model ? { model: opts.model } : {}),
+    ...(opts.at ? { at: opts.at } : {}),
+  };
+}
+
+export async function putUnits(
+  jobId: string,
+  translations: Map<string, string>,
+  opts: PutUnitsOptions = {},
+): Promise<void> {
   const d = await db();
   await new Promise<void>((resolve, reject) => {
     const tx = d.transaction("units", "readwrite");
     const store = tx.objectStore("units");
     for (const [uid, text] of translations) {
-      store.put({ key: `${jobId}::${uid}`, jobId, uid, text } satisfies UnitRecord);
+      const key = `${jobId}::${uid}`;
+      if (!opts.keepPrevious) {
+        store.put(mergeUnitRecord(undefined, { jobId, uid, text }, opts));
+        continue;
+      }
+      // Read-then-write inside the same transaction, so `prev` cannot race.
+      const read = store.get(key);
+      read.onsuccess = () => {
+        store.put(mergeUnitRecord(read.result as UnitRecord | undefined, { jobId, uid, text }, opts));
+      };
     }
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
+}
+
+export function getUnitRecords(jobId: string): Promise<UnitRecord[]> {
+  return db().then(
+    (d) =>
+      new Promise<UnitRecord[]>((resolve, reject) => {
+        const tx = d.transaction("units", "readonly");
+        const req = tx.objectStore("units").index("jobId").getAll(jobId);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      }),
+  );
+}
+
+/**
+ * Swap `text` and `prev` for the given uids, and return what was restored.
+ *
+ * Self-inverse, so the revert of a revert is the retranslation again.
+ */
+export async function revertUnits(jobId: string, uids: string[]): Promise<Map<string, string>> {
+  const d = await db();
+  const restored = new Map<string, string>();
+  await new Promise<void>((resolve, reject) => {
+    const tx = d.transaction("units", "readwrite");
+    const store = tx.objectStore("units");
+    for (const uid of uids) {
+      const req = store.get(`${jobId}::${uid}`);
+      req.onsuccess = () => {
+        const row = req.result as UnitRecord | undefined;
+        if (!row || row.prev === undefined) return;
+        restored.set(uid, row.prev);
+        store.put({ ...row, text: row.prev, prev: row.text });
+      };
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+  return restored;
 }
 
 export async function getUnits(jobId: string): Promise<Map<string, string>> {

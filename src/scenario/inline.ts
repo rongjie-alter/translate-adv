@@ -130,8 +130,12 @@ export function renderCompact(s: string, opts: { ruby?: boolean; sizes?: number[
   html = html.replace(EM_COMPACT, (_m, inner: string) => `<em>${inner}</em>`);
   let i = 0;
   html = html.replace(BIG_COMPACT, (_m, inner: string) => {
-    const px = opts.sizes?.[i++];
-    const style = px ? ` style="font-size: calc(${px}px * 0.5)"` : ` class="big"`;
+    // Coerced, not trusted: `sizes` can arrive from a `.tl.json` written by someone
+    // else, and this value is interpolated straight into an attribute.
+    const px = Number(opts.sizes?.[i++]);
+    const style = Number.isFinite(px) && px > 0
+      ? ` style="font-size: calc(${px}px * 0.5)"`
+      : ` class="big"`;
     return `<span${style}>${inner}</span>`;
   });
   return html;

@@ -8,7 +8,17 @@
  * free tiers this app targets.
  */
 import type { LabelMap } from "./labels";
-import { isTranslatable, type Lang, type SceneNode, type Speaker } from "./model";
+import {
+  isTranslatable,
+  type CondEndNode,
+  type CondNode,
+  type JumpNode,
+  type LabelNode,
+  type Lang,
+  type SceneNode,
+  type Speaker,
+  type TranslatableNode,
+} from "./model";
 
 export interface WireLine {
   n: number;
@@ -35,6 +45,35 @@ export function speakerName(s: Speaker, lang: Lang): string {
   return s.tl?.[lang] || s.jp;
 }
 
+/** Structure sent as context; never numbered, never echoed back. */
+export type StructureNode = LabelNode | JumpNode | CondNode | CondEndNode;
+
+/** The unnumbered form of a structural node. Shared by both serializers. */
+function renderStructure(node: StructureNode, labels: LabelMap): string {
+  switch (node.kind) {
+    case "label":
+      return `== ${labels.alias(node.id)} ==`;
+    case "jump":
+      return `=> ${labels.alias(node.to)}${node.random ? " (50%)" : ""}`;
+    case "cond":
+      return `? ${node.expr}`;
+    case "cond-end":
+      return "?end";
+  }
+}
+
+/** What sits between a line's number and its text. Shared by both serializers. */
+function renderPrefix(node: TranslatableNode, labels: LabelMap, lang: Lang): string {
+  if (node.kind === "select") return `>${labels.alias(node.to)} `;
+  if (node.kind === "title") return "# ";
+  if (node.speaker) return `${speakerName(node.speaker, lang)}: `;
+  return "";
+}
+
+function toWireLine(node: TranslatableNode, n: number): WireLine {
+  return { n, uid: node.uid, src: node.src, hadSpeaker: node.kind === "text" && !!node.speaker };
+}
+
 export function serializeChunk(nodes: SceneNode[], opts: SerializeOptions): WireChunk {
   const lines: WireLine[] = [];
   const out: string[] = [];
@@ -42,32 +81,12 @@ export function serializeChunk(nodes: SceneNode[], opts: SerializeOptions): Wire
   for (const c of opts.context ?? []) out.push(`~ ${c}`);
 
   for (const node of nodes) {
-    switch (node.kind) {
-      case "label":
-        out.push(`== ${opts.labels.alias(node.id)} ==`);
-        break;
-      case "jump":
-        out.push(`=> ${opts.labels.alias(node.to)}${node.random ? " (50%)" : ""}`);
-        break;
-      case "cond":
-        out.push(`? ${node.expr}`);
-        break;
-      case "cond-end":
-        out.push("?end");
-        break;
-      case "text":
-      case "select":
-      case "title": {
-        const n = lines.length + 1;
-        const hadSpeaker = node.kind === "text" && !!node.speaker;
-        let prefix = "";
-        if (node.kind === "select") prefix = `>${opts.labels.alias(node.to)} `;
-        else if (node.kind === "title") prefix = "# ";
-        else if (node.speaker) prefix = `${speakerName(node.speaker, opts.lang)}: `;
-        out.push(`${n} ${prefix}${node.src}`);
-        lines.push({ n, uid: node.uid, src: node.src, hadSpeaker });
-        break;
-      }
+    if (isTranslatable(node)) {
+      const n = lines.length + 1;
+      out.push(`${n} ${renderPrefix(node, opts.labels, opts.lang)}${node.src}`);
+      lines.push(toWireLine(node, n));
+    } else {
+      out.push(renderStructure(node, opts.labels));
     }
   }
 
@@ -77,6 +96,72 @@ export function serializeChunk(nodes: SceneNode[], opts: SerializeOptions): Wire
 /** Re-ask for a subset of lines, renumbered to their original ids. */
 export function serializeRepair(lines: WireLine[]): string {
   return lines.map((l) => `${l.n} ${l.src}`).join("\n");
+}
+
+/**
+ * One item of a targeted retranslation body.
+ *
+ * The planner decides which units are targets and which are only there so the
+ * model can see what surrounds them; this file only renders that decision.
+ */
+export type SelectionItem =
+  | { role: "structure"; node: StructureNode }
+  /** An already-translated line (or the Japanese, when it has no translation yet). */
+  | { role: "context"; text: string; prefix?: string }
+  /** A line that must come back translated. */
+  | { role: "target"; node: TranslatableNode };
+
+/** A contiguous stretch of the chapter: targets plus the context wrapped around them. */
+export interface SelectionGroup {
+  items: SelectionItem[];
+}
+
+export interface SerializeSelectionOptions {
+  labels: LabelMap;
+  lang: Lang;
+  /** Text after `~` marking a jump to a different part of the scene. */
+  gap?: string;
+}
+
+/** Default gap marker. `~` already means "not content" to the model and the mock. */
+export const SELECTION_GAP = "[...]";
+
+/**
+ * Render several non-contiguous groups as one request body.
+ *
+ * Numbering is global and ascending across every group, so a single
+ * `parseResponse` maps the whole reply back — and a `serializeRepair` round over
+ * the misses works unchanged. Context rides on `~`, which the prompt already
+ * documents as "not content", so this adds no token to the wire format.
+ */
+export function serializeSelection(
+  groups: SelectionGroup[],
+  opts: SerializeSelectionOptions,
+): WireChunk {
+  const lines: WireLine[] = [];
+  const out: string[] = [];
+
+  groups.forEach((group, gi) => {
+    if (gi > 0) out.push(`~ ${opts.gap ?? SELECTION_GAP}`);
+    for (const item of group.items) {
+      switch (item.role) {
+        case "structure":
+          out.push(renderStructure(item.node, opts.labels));
+          break;
+        case "context":
+          out.push(`~ ${item.prefix ?? ""}${item.text}`);
+          break;
+        case "target": {
+          const n = lines.length + 1;
+          out.push(`${n} ${renderPrefix(item.node, opts.labels, opts.lang)}${item.node.src}`);
+          lines.push(toWireLine(item.node, n));
+          break;
+        }
+      }
+    }
+  });
+
+  return { text: out.join("\n"), lines };
 }
 
 export interface ParseResult {

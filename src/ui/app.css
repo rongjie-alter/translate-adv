@@ -139,6 +139,104 @@ progress { width: 100%; height: 0.6rem; }
 .group h3 { margin: 0 0 0.75rem; font-size: 0.95rem; }
 .folder { color: var(--muted); font-size: 0.88rem; }
 
+/* -- Review ---------------------------------------------------------------- */
+
+.review { display: flex; flex-direction: column; }
+
+.rv-toolbar {
+  position: sticky;
+  top: 3.1rem;
+  z-index: 4;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+.rv-toolbar .row { margin-bottom: 0.35rem; }
+.rv-find { flex: 1 1 14rem; }
+.rv-check { flex-direction: row; align-items: center; }
+
+.rv-body { border: 1px solid var(--line); border-radius: 8px; background: #fff; overflow: hidden; }
+.rv-body.hide-jp .rv-jp { display: none; }
+.rv-body em { font-style: normal; text-emphasis: dot; -webkit-text-emphasis: dot; }
+
+.rv-unit {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr;
+  gap: 0.4rem;
+  align-items: start;
+  padding: 0.4rem 0.6rem;
+  padding-left: calc(0.6rem + var(--depth, 0) * 1rem);
+  border-bottom: 1px solid #f0f0f4;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  /* Chapters run to a couple of thousand lines; skip layout and paint off-screen.
+     The `auto <length>` form caches each row's measured height so the scrollbar
+     stops jittering, and Ctrl+F still reveals rows inside. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 3.4rem;
+}
+.rv-unit:hover { background: #f3f4fb; }
+.rv-unit.sel { background: #eef0ff; }
+.rv-unit.focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rv-unit.select { border-left-color: var(--accent); }
+.rv-unit.title { border-left-color: var(--ok); font-weight: 600; }
+.rv-unit.gap { border-left-color: var(--err); }
+.rv-unit.changed { border-left-color: var(--ok); background: #f0fbf4; }
+.rv-unit input { margin-top: 0.2rem; }
+
+.rv-tl { line-height: 1.45; }
+.rv-jp { color: var(--muted); font-size: 0.9em; margin-top: 0.2rem; }
+.rv-chara { font-weight: 700; margin-right: 0.4rem; }
+.rv-opt { color: var(--accent); margin-right: 0.3rem; }
+.rv-to { float: right; font-size: 0.85em; color: var(--accent); }
+.rv-none { color: var(--err); font-style: italic; }
+
+.rv-marker {
+  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.6rem;
+  padding-left: calc(0.6rem + var(--depth, 0) * 1rem);
+  border-bottom: 1px solid #f0f0f4;
+}
+.rv-marker.label { background: #fff5d6; font-weight: 600; }
+.rv-marker.jump { color: var(--accent); }
+.rv-marker.jump a { color: inherit; }
+.rv-marker.cond { color: var(--muted); font-family: ui-monospace, monospace; }
+
+/* Sibling of .rv-body, never inside it — containment would clip a sticky child. */
+.rv-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 -4px 12px #0000000f;
+}
+.rv-bar .row:last-child { margin-bottom: 0; }
+.rv-bar .count { font-weight: 600; font-variant-numeric: tabular-nums; }
+.rv-bar .est { color: var(--muted); font-size: 0.85rem; }
+.rv-bar .hint { margin: 0.25rem 0 0; }
+.rv-hint { flex: 1 1 18rem; }
+
+.rv-props { max-height: 22rem; overflow: auto; margin: 0.5rem 0; }
+.rv-prop {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr;
+  gap: 0.4rem;
+  padding: 0.5rem 0.25rem;
+  border-bottom: 1px solid var(--line);
+  opacity: 0.5;
+}
+.rv-prop.keep { opacity: 1; }
+.rv-was { color: var(--muted); text-decoration: line-through; font-size: 0.9em; margin: 0.15rem 0; }
+.rv-new { color: var(--ok); }
+
 .toasts { position: fixed; bottom: 1rem; right: 1rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 20; }
 .toast { padding: 0.6rem 0.9rem; border-radius: 6px; background: #23232b; color: #fff; max-width: 26rem; box-shadow: 0 4px 16px #0003; }
 .toast.error { background: var(--err); }

@@ -16,7 +16,13 @@ import { artifactKey } from "../storage/exchange";
 import { useActiveBook, useStore } from "./store";
 import { chunksFor, type useTranslation } from "./useTranslation";
 
-export function ScanView({ translation }: { translation: ReturnType<typeof useTranslation> }) {
+export function ScanView({
+  translation,
+  busy,
+}: {
+  translation: ReturnType<typeof useTranslation>;
+  busy: boolean;
+}) {
   const store = useStore();
   const active = useActiveBook();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -122,9 +128,21 @@ export function ScanView({ translation }: { translation: ReturnType<typeof useTr
                     <td class="num">{c.units}</td>
                     <td class="num">{c.chars.toLocaleString()}</td>
                     <td class={`status ${status.kind}`}>{status.text}</td>
-                    <td>
+                    <td class="actions">
+                      {status.kind !== "none" ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            store.openReview(
+                              artifactKey({ book: active.source.file, chapter: c.name, lang }),
+                            );
+                          }}
+                        >
+                          Review
+                        </button>
+                      ) : null}
                       <button
-                        disabled={translation.running}
+                        disabled={busy}
                         onClick={(e) => {
                           e.stopPropagation();
                           if (status.kind === "done") {
