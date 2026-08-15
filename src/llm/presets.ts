@@ -86,7 +86,7 @@ export const PRESETS: Preset[] = [
   },
 ];
 
-export const DEFAULT_PRESET_ID = "gemini-flash";
+export const DEFAULT_PRESET_ID = "gemini-flash-lite";
 
 export function findPreset(presets: Preset[], id: string): Preset {
   return presets.find((p) => p.id === id) ?? presets[0];
