@@ -68,7 +68,7 @@ export const PRESETS: Preset[] = [
     label: "Gemma4 31B (Google AI Studio free tier)",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     model: "gemma-4-31b-it",
-    limits: { rpm: 30, rpd: 14.4, tpm: 16_000, maxInputTokens: 16_000, maxOutputTokens: 8_192 },
+    limits: { rpm: 30, rpd: 14400, tpm: 16_000, maxInputTokens: 16_000, maxOutputTokens: 8_192 },
     charsPerToken: 1.0,
     quotaResetTz: "America/Los_Angeles",
     keyUrl: "https://aistudio.google.com/api-keys",
