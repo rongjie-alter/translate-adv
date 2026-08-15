@@ -92,6 +92,11 @@ const ID_LINE = /^(\d+)[ \t.:)]\s*(.*)$/;
 const FENCE = /^\s*```.*$/;
 const STRUCTURE = /^\s*(==|=>|\?|~)/;
 const ECHOED_SPEAKER = /^([^:：]{1,24})[:：]\s+(.+)$/;
+/**
+ * Reasoning models (e.g. Gemma) sometimes emit a thinking block with no newline
+ * before the first numbered line, so it would otherwise swallow line 1 whole.
+ */
+const THOUGHT_BLOCK = /<(?:thought|think|reasoning)>[\s\S]*?<\/(?:thought|think|reasoning)>/gi;
 
 export function parseResponse(raw: string, lines: WireLine[]): ParseResult {
   const byN = new Map(lines.map((l) => [l.n, l]));
@@ -99,7 +104,7 @@ export function parseResponse(raw: string, lines: WireLine[]): ParseResult {
   const extra: number[] = [];
   let last: { n: number; uid: string } | null = null;
 
-  for (const rawLine of raw.split("\n")) {
+  for (const rawLine of raw.replace(THOUGHT_BLOCK, "").split("\n")) {
     if (FENCE.test(rawLine)) continue;
     const m = ID_LINE.exec(rawLine.trim());
     if (m) {

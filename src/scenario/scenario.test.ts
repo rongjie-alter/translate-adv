@@ -247,6 +247,14 @@ describe("parseResponse", () => {
     const r = parseResponse("1. Hello\n2) Goodbye\n3\tBye", lines);
     expect(r.missing).toHaveLength(0);
   });
+
+  it("strips a thinking block glued to the first numbered line", () => {
+    // Gemma-style reasoning models emit `<thought>...</thought>1 text` with no
+    // newline in between, so line 1 would otherwise be swallowed by the thought.
+    const r = parseResponse("<thought>plan: translate line 1 first</thought>1 Hello\n2 Goodbye\n3 Bye", lines);
+    expect(r.translations.get("a/1")).toBe("Hello");
+    expect(r.missing).toHaveLength(0);
+  });
 });
 
 describe("renderCompact", () => {
