@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { renderCompact } from "./inline";
+import { renderCompact, toCompact } from "./inline";
 import { makeLabelMap } from "./labels";
 import { isTranslatable, type SelectNode, type TextNode } from "./model";
 import { chapterSpeakers, parseBookHtml } from "./parseHtml";
@@ -255,6 +255,15 @@ describe("parseResponse", () => {
     expect(r.translations.get("a/1")).toBe("Hello");
     expect(r.missing).toHaveLength(0);
   });
+
+  it("passes an unfamiliar {param} placeholder through the wire format untouched", () => {
+    const node: TextNode = { kind: "text", uid: "a/1", src: "{someNewParam}に会う", hash: "deadbeef" };
+    const chunk = serializeChunk([node], { labels: makeLabelMap([]), lang: "en" });
+    expect(chunk.text).toContain("{someNewParam}");
+
+    const r = parseResponse("1 Meet {someNewParam}", chunk.lines);
+    expect(r.translations.get("a/1")).toBe("Meet {someNewParam}");
+  });
 });
 
 describe("renderCompact", () => {
@@ -271,5 +280,15 @@ describe("renderCompact", () => {
 
   it("escapes stray angle brackets", () => {
     expect(renderCompact("a < b & c")).toBe("a &lt; b &amp; c");
+  });
+
+  it("round-trips an arbitrary param name never seen in the sample books", () => {
+    const doc = new DOMParser().parseFromString(
+      '<p><code data-param="teamLeaderCharaName">&lt;param=teamLeaderCharaName&gt;</code>と話す</p>',
+      "text/html",
+    );
+    const { text } = toCompact(doc.querySelector("p")!);
+    expect(text).toBe("{teamLeaderCharaName}と話す");
+    expect(renderCompact(text)).toContain("<code>&lt;param=teamLeaderCharaName&gt;</code>");
   });
 });
