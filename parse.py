@@ -5,6 +5,19 @@ import re
 import os
 import io
 
+# Language codes used by the translation web app, mapped to Localize.xls columns.
+TL_META_LANGS = [
+  ("en", "English"),
+  ("zh-hans", "ChineseSimplified"),
+  ("zh-hant", "ChineseTraditional"),
+]
+
+# Bumped when the meaning of a data-* attribute changes, so the app can tell.
+TL_META_VERSION = 2
+
+def escapeAttr(s):
+  return s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+
 def dumpJson(filename, obj, **kwargs):
   with open(filename, "w", encoding="utf-8") as f:
     json.dump(obj, f, ensure_ascii=False, indent="", **kwargs)
@@ -180,7 +193,7 @@ document.querySelector("#ruby-btn").onclick = function() {
 </script></body></html>
 '''
 
-  VALEN_PATTERN = re.compile(r'valen\w+special\.book')
+  VALEN_PATTERN = re.compile(r'valen\w+special(_main)?\.book')
 
   def __init__(self, filename, args):
     self.filename = filename
@@ -192,7 +205,15 @@ document.querySelector("#ruby-btn").onclick = function() {
     self.valen_special = args.valentine or self.VALEN_PATTERN.match(self.filename) != None
 
     self.tl_name = args.common and (args.special or args.tl_name)
-    if self.tl_name:
+
+    # Machine-readable annotations for the translation web app. Purely additive --
+    # they are attributes on the elements that were already being written, so
+    # anything that reads the visible HTML is unaffected.
+    self.tl_meta = args.tl_meta and bool(args.common) and os.path.exists(args.common)
+    if args.tl_meta and not self.tl_meta:
+      print(f"warning: {args.common} not found, writing HTML without translation metadata")
+
+    if self.tl_name or self.tl_meta:
       self.process_common(args.common)
 
   def write(self, s):
@@ -237,7 +258,13 @@ document.querySelector("#ruby-btn").onclick = function() {
     return ans
 
   def dumpHtmlImpl(self):
-    self.write(self.HEADER)
+    header = self.HEADER
+    if self.tl_meta:
+      book = os.path.basename(self.filename)
+      header = header.replace('<body>', f'<body data-parse-version="{TL_META_VERSION}"'
+                                        f' data-book="{escapeAttr(book)}">')
+    self.write(header)
+
     for k in self.chapters:
       name = self.getName(k)
       words = self.countJpWords(self.chapters[k])
@@ -245,9 +272,10 @@ document.querySelector("#ruby-btn").onclick = function() {
 
     self.write('</ol>')
 
+    skip = self.skip
     for k in self.chapters:
-      if args.skip > 0:
-        args.skip -= 1
+      if skip > 0:
+        skip -= 1
       else:
         self.dumpScenario(self.getName(k), self.chapters[k])
     self.write(self.FOOTER)
@@ -260,7 +288,8 @@ document.querySelector("#ruby-btn").onclick = function() {
     self.write('<!-- ' + repr(c) + '-->')
 
   def dumpScenario(self, name, scenario):
-    self.write(f'<h3 id="{name}">{name}</h3>')
+    words = f' data-jp-words="{self.countJpWords(scenario)}"' if self.tl_meta else ''
+    self.write(f'<h3 id="{name}"{words}>{name}</h3>')
 
     if self.valen_special:
       self.writeValenSpecialList(name, scenario)
@@ -283,12 +312,14 @@ document.querySelector("#ruby-btn").onclick = function() {
         hash = self.processHash(c["Arg1"], name)
         extra = ''
         if "Arg2" in c: extra = ('(' + c["Arg2"] + ')')
-        self.write(f'<div class="jump">Jump to <a href="#{hash}">{hash}</a> {extra}</div>')
+        meta = self.metaAttrs([("to", hash), ("if", c.get("Arg2"))]) if self.tl_meta else ''
+        self.write(f'<div class="jump"{meta}>Jump to <a href="#{hash}">{hash}</a> {extra}</div>')
       elif command == 'JumpRandom':
         hash = self.processHash(c["Arg1"], name)
         extra = ''
         if "Arg2" in c: extra = ('(' + c["Arg2"] + ')')
-        self.write(f'<div class="jump">50% chance of jumping to <a href="#{hash}">{hash}</a> {extra}</div>')
+        meta = self.metaAttrs([("to", hash), ("if", c.get("Arg2")), ("random", "1")]) if self.tl_meta else ''
+        self.write(f'<div class="jump"{meta}>50% chance of jumping to <a href="#{hash}">{hash}</a> {extra}</div>')
       elif command == 'Param':
         self.write(f'<p>Set {c["Arg1"]}</p>')
       elif command == 'Bg':
@@ -314,12 +345,18 @@ document.querySelector("#ruby-btn").onclick = function() {
         hash = self.processHash(c["Arg1"], name)
         line = self.escapeLine(c.get(dialogue, ""))
         arg2 = c.get("Arg2", None)
-        if arg2:
-          line += f" (If {arg2})"
         arg3 = c.get("Arg3", None)
-        if arg3:
-          line += f" (Execute {arg3})"
-        self.write(f'<div class="select"><a href="#{hash}">{line}</a></div>')
+        if self.tl_meta:
+          # Keep the condition out of the anchor text, so what gets translated is
+          # the option the player reads and nothing else.
+          meta = self.metaAttrs([("to", hash), ("if", arg2), ("do", arg3)])
+        else:
+          meta = ''
+          if arg2:
+            line += f" (If {arg2})"
+          if arg3:
+            line += f" (Execute {arg3})"
+        self.write(f'<div class="select"{meta}><a href="#{hash}">{line}</a></div>')
       elif self.effecton:
         self.processEffects(c)
 
@@ -339,8 +376,8 @@ document.querySelector("#ruby-btn").onclick = function() {
   def processLine(self, c, dialogue):
     if "Arg1" not in c and dialogue not in c: return
 
-    s = '<div class="text">'
     arg1 = c.get("Arg1", "")
+    s = '<div class="text"' + self.lineMeta(c, arg1) + '>'
 
     if self.tl_name and arg1 != '':
       s += f'<span class="chara">{self.getTranslated(self.getCharacter(arg1))}:</span> '
@@ -362,9 +399,21 @@ document.querySelector("#ruby-btn").onclick = function() {
     if self.no_newline: s = s.replace('<br>', ' ')
     self.write(s)
 
+  def lineMeta(self, c, arg1):
+    if not self.tl_meta or arg1 == '': return ''
+
+    arg2 = c.get("Arg2", "")
+    pose = 'hide sprite' if arg2 == '<Off>' else arg2
+    pairs = [("chara", arg1), ("pose", pose)]
+    for code, name in self.officialNames(arg1).items():
+      pairs.append((f"chara-{code}", name))
+    return self.metaAttrs(pairs)
+
   def escapeLine(self, s, size_left_replace=r'<span style="font-size: calc(\1px * 0.5)">', size_right_replace="</span>"):
     s = self.RUBY_PATTERN.sub(r'<ruby>\2<rp>(</rp><rt>\1</rt><rp>)</rp></ruby>', s)
-    s = self.PARAM_PATTERN.sub(r'<code>&lt;param=\1&gt;</code>', s)
+    param_replace = (r'<code data-param="\1">&lt;param=\1&gt;</code>' if self.tl_meta
+                     else r'<code>&lt;param=\1&gt;</code>')
+    s = self.PARAM_PATTERN.sub(param_replace, s)
     s = self.EM_PATTERN.sub(r'em>', s)
     s = self.SIZE_LEFT_PATTERN.sub(size_left_replace, s)
     return self.tidyHtml(s.replace('\n', '<br>').replace('</size>', size_right_replace))
@@ -487,12 +536,38 @@ document.querySelector("#ruby-btn").onclick = function() {
     obj = parseJson(filename)
     self.translated = make_map(obj, self.lang)
     self.character = make_map2(obj)
+    # Every localized column at once, so one HTML file serves every target language.
+    self.translated_all = {
+      code: make_map(obj, {"name": column}) for code, column in TL_META_LANGS
+    }
 
   def getTranslated(self, key):
     return self.translated.get(key, key)
 
   def getCharacter(self, key):
     return self.character.get(key, key)
+
+  def officialNames(self, arg1):
+    """Official name per language for a sprite id, via Character.xls then Localize.xls.
+
+    Returns only the languages that actually have a translation; a name that is
+    merely echoed back untranslated tells the model nothing it did not already know.
+    """
+    display = self.getCharacter(arg1)
+    out = {}
+    for code, _ in TL_META_LANGS:
+      value = self.translated_all[code].get(display)
+      if value and value != display:
+        out[code] = value
+    return out
+
+  def metaAttrs(self, pairs):
+    """Render `data-*` attributes, skipping empties."""
+    out = ''
+    for key, value in pairs:
+      if value is None or value == '': continue
+      out += f' data-{key}="{escapeAttr(str(value))}"'
+    return out
 
 class HtmlSpecial(Html):
 
@@ -721,12 +796,14 @@ if __name__ == "__main__":
   parser.add_argument('--scan', action='store_true', help='Scan dir to convert raw json from AssetStudio to compact version')
   parser.add_argument('--source', default='event', choices=['event', 'main', 'chara', 'lesson', 'rinkai', 'dg01', 'dg02', 'dg03'])
   parser.add_argument('--compareV2', default='', help='Compare content V2')
-  parser.add_argument('--lang', type=process_lang, default="jp", help='Language (jp, en, cn, tw)')
+  parser.add_argument('--lang', type=process_lang, default=process_lang("jp"), help='Language (jp, en, cn, tw)')
   parser.add_argument('--effecton', default=False, action='store_true', help='Keep effects')
   parser.add_argument('--greeting', type=str, help='Greeting file name')
   parser.add_argument('--sign', type=str, help='Sign file name')
   parser.add_argument('--special', action='store_true')
   parser.add_argument('--tl_name', action='store_true', help="Translate name")
+  parser.add_argument('--no_tl_meta', dest='tl_meta', action='store_false',
+                      help="Omit the data-* attributes the translation web app reads")
   parser.add_argument('--valentine', action='store_true')
   parser.add_argument('--no_newline', action='store_true')
   parser.add_argument('--common', type=str, default="common.chapter.json", help="path to common.chapter json")

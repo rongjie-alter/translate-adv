@@ -1,0 +1,76 @@
+/**
+ * The system prompt.
+ *
+ * Editable in Settings; `{{targetLanguage}}` and `{{glossary}}` are substituted at
+ * send time. The wire-format rules are load-bearing — if the model stops emitting
+ * `<id> <text>` the whole chunk has to be repaired or retried — so they are stated
+ * up front and repeated as the last line, which is where instruction-following is
+ * strongest.
+ */
+import { LANG_LABEL, type Lang, type Speaker } from "../scenario/model";
+import { speakerName } from "../scenario/serialize";
+
+export const DEFAULT_SYSTEM_PROMPT = `You are translating a Japanese visual-novel scenario into {{targetLanguage}}.
+
+Input format — one line per unit:
+  12 Name: dialogue        a spoken line; "Name" is the speaker, for context only
+  13 narration             a line with no speaker
+  14 >alt1 option text     a branch option the player can pick
+  15 # Episode - Title     an episode title card
+  == label ==              start of a branch; not content
+  => label                 a jump to another branch; not content
+  ? cond / ?end            a conditional block; not content
+  ~ text                   already-translated context; not content
+
+Inline markers, which must survive unchanged into your output:
+  {playerName}   a placeholder the game fills in at runtime — never translate or reword it
+  漢字(かんじ)   a reading gloss — render the base word in {{targetLanguage}} and drop the reading
+                 unless it carries meaning a reader would otherwise miss
+  *text*         emphasis dots in the original
+  ^text^         an oversized shout
+
+Translate naturally rather than literally. Keep each speaker's register consistent —
+casual stays casual, archaic stays archaic. Preserve honorifics when they carry meaning.
+Keep bracketed stage directions like （飛び起きる） in their brackets.
+{{glossary}}
+Output rules:
+- One line per input line, in the same order, each starting with the same number.
+- Output the number and the translated text only. No speaker names, no >alt1 or # markers,
+  no ==, =>, ?, ~ lines, no commentary, no code fences.
+- Never merge, split, skip or reorder lines. If a line is untranslatable, repeat it verbatim.`;
+
+export function buildSystemPrompt(template: string, lang: Lang, speakers: Speaker[]): string {
+  return template
+    .replace(/\{\{targetLanguage\}\}/g, LANG_LABEL[lang])
+    .replace(/\{\{glossary\}\}/g, glossaryBlock(speakers, lang));
+}
+
+/**
+ * Character names, sent once per chunk instead of being re-derived per line.
+ * Names sourced from `common.chapter.json` (via `parse.py --tl_meta`) are marked as
+ * official so the model does not "improve" them.
+ */
+export function glossaryBlock(speakers: Speaker[], lang: Lang): string {
+  if (!speakers.length) return "";
+  const official = speakers.filter((s) => s.tl?.[lang]);
+  const rest = speakers.filter((s) => !s.tl?.[lang]);
+
+  const parts: string[] = [];
+  if (official.length) {
+    parts.push(
+      "\nUse these official character names exactly:\n" +
+        official.map((s) => `  ${s.jp} = ${speakerName(s, lang)}`).join("\n"),
+    );
+  }
+  if (rest.length) {
+    parts.push(
+      "\nCharacters in this scene (translate their names consistently throughout):\n" +
+        rest.map((s) => `  ${s.jp}`).join("\n"),
+    );
+  }
+  return parts.join("\n") + "\n";
+}
+
+export const REPAIR_INSTRUCTION =
+  "Some lines were missing from your last reply. Translate exactly these lines, " +
+  "using the same numbers and the same output rules.";
