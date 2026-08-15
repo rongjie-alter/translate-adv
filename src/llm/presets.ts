@@ -6,6 +6,8 @@
  * the app only ever calls `POST {baseUrl}/chat/completions`.
  */
 
+export type ReasoningEffort = "none" | "low" | "medium" | "high";
+
 export interface Limits {
   /** Requests per minute. 0 = unlimited. */
   rpm: number;
@@ -35,6 +37,13 @@ export interface Preset {
   charsPerToken: number;
   /** IANA zone whose midnight resets the daily quota. */
   quotaResetTz: string;
+  /**
+   * Sent as `reasoning_effort`, left off the request when unset. Reasoning models
+   * (Gemini 3, o-series) burn tokens on hidden "thinking" before writing visible
+   * text, and that spend counts against `maxOutputTokens` without ever showing up
+   * in the response — this caps it so a chunk actually has room to answer.
+   */
+  reasoningEffort?: ReasoningEffort;
   /** Where to get a key; shown in Settings. */
   keyUrl?: string;
   builtin?: boolean;
@@ -50,6 +59,9 @@ export const PRESETS: Preset[] = [
     charsPerToken: 1.0,
     quotaResetTz: "America/Los_Angeles",
     keyUrl: "https://aistudio.google.com/api-keys",
+    // `-latest` can float onto a Gemini 3 thinking model; capping effort keeps
+    // hidden reasoning tokens from eating the whole output budget on this tier.
+    reasoningEffort: "low",
     builtin: true,
   },
   {

@@ -14,12 +14,16 @@ export interface ChatRequest {
   user: string;
   maxOutputTokens?: number;
   temperature?: number;
+  /** Caps "thinking" tokens on reasoning models. `none`/`low`/`medium`/`high`. */
+  reasoningEffort?: string;
   signal?: AbortSignal;
 }
 
 export interface Usage {
   promptTokens: number;
   completionTokens: number;
+  /** `completionTokens` plus any hidden reasoning tokens billed against `maxOutputTokens`. */
+  totalTokens: number;
 }
 
 export interface ChatResponse {
@@ -61,6 +65,7 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
         ],
         temperature: req.temperature ?? 0.3,
         ...(req.maxOutputTokens ? { max_tokens: req.maxOutputTokens } : {}),
+        ...(req.reasoningEffort ? { reasoning_effort: req.reasoningEffort } : {}),
       }),
       signal: req.signal,
     });
@@ -84,19 +89,24 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
 
   const json = (await res.json()) as {
     choices?: { message?: { content?: string }; finish_reason?: string }[];
-    usage?: { prompt_tokens?: number; completion_tokens?: number };
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
   };
   const choice = json.choices?.[0];
   if (!choice?.message?.content) {
     throw new LlmError("Endpoint returned no content", res.status, true);
   }
 
+  const promptTokens = json.usage?.prompt_tokens ?? 0;
+  const completionTokens = json.usage?.completion_tokens ?? 0;
   return {
     content: choice.message.content,
     finishReason: choice.finish_reason ?? "stop",
     usage: {
-      promptTokens: json.usage?.prompt_tokens ?? 0,
-      completionTokens: json.usage?.completion_tokens ?? 0,
+      promptTokens,
+      completionTokens,
+      // Falls back to prompt+completion for endpoints that omit total_tokens; for a
+      // reasoning model this field is what actually carries the hidden thinking cost.
+      totalTokens: json.usage?.total_tokens ?? promptTokens + completionTokens,
     },
   };
 }

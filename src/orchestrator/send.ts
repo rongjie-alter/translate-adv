@@ -33,6 +33,8 @@ export interface SendDeps {
   baseUrl: string;
   model: string;
   maxOutputTokens: number;
+  /** Caps "thinking" tokens on reasoning models. `none`/`low`/`medium`/`high`. */
+  reasoningEffort?: string;
   onEvent(e: SendEvent): void;
   /** Injectable for tests. */
   chat?: typeof chat;
@@ -82,6 +84,7 @@ export async function sendRequest(args: {
         system,
         user,
         maxOutputTokens: deps.maxOutputTokens,
+        reasoningEffort: deps.reasoningEffort,
         signal,
       });
       deps.limiter.settle(estimate, res.usage.promptTokens || estimate);
@@ -113,7 +116,7 @@ export async function translateWire(args: {
 }): Promise<{
   translations: Map<string, string>;
   missing: WireLine[];
-  usage: { promptTokens: number; completionTokens: number };
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number };
 }> {
   const { system, wire, charsPerToken, index, deps, signal } = args;
 
@@ -138,6 +141,7 @@ export async function translateWire(args: {
     });
     usage.promptTokens += res.usage.promptTokens;
     usage.completionTokens += res.usage.completionTokens;
+    usage.totalTokens += res.usage.totalTokens;
     const again = parseResponse(res.content, missing);
     for (const [uid, text] of again.translations) translations.set(uid, text);
     if (again.missing.length === missing.length) break; // making no progress

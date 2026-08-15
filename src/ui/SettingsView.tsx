@@ -75,6 +75,26 @@ export function SettingsView() {
           Daily quota resets in
           <input value={preset.quotaResetTz} onInput={(e) => updatePreset({ quotaResetTz: value(e) })} />
         </label>
+        <label>
+          Reasoning effort
+          <select
+            value={preset.reasoningEffort ?? ""}
+            onChange={(e) => {
+              const v = (e.target as HTMLSelectElement).value;
+              updatePreset({ reasoningEffort: v ? (v as Preset["reasoningEffort"]) : undefined });
+            }}
+          >
+            <option value="">Default (let the endpoint decide)</option>
+            <option value="none">None</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+          <small>
+            Caps "thinking" tokens on reasoning models (e.g. Gemini 3) that would otherwise consume
+            most of the output budget before writing any translation.
+          </small>
+        </label>
       </div>
 
       <label class="key">

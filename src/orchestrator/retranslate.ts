@@ -522,6 +522,7 @@ export async function runRetranslate(
     baseUrl: deps.baseUrl,
     model: deps.model,
     maxOutputTokens: deps.maxOutputTokens,
+    reasoningEffort: deps.reasoningEffort,
     chat: deps.chat,
     onEvent: (e) => deps.onEvent(e),
   };
@@ -572,7 +573,7 @@ export async function runRetranslate(
         promptText: system + req.wire.text,
         promptTokens: res.usage.promptTokens,
         sourceTokens: req.srcTokens,
-        completionTokens: res.usage.completionTokens,
+        totalTokens: res.usage.totalTokens,
       });
       deps.onCalibration(calibration);
 

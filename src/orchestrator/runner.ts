@@ -34,6 +34,8 @@ export interface RunnerDeps {
   baseUrl: string;
   model: string;
   maxOutputTokens: number;
+  /** Caps "thinking" tokens on reasoning models. `none`/`low`/`medium`/`high`. */
+  reasoningEffort?: string;
   systemPromptTemplate: string;
   speakers: Speaker[];
   labels: LabelMap;
@@ -107,7 +109,7 @@ export async function runJob(
         promptText: system + wire.text,
         promptTokens: usage.promptTokens,
         sourceTokens: chunk.tokens,
-        completionTokens: usage.completionTokens,
+        totalTokens: usage.totalTokens,
       });
       deps.onCalibration(calibration);
 

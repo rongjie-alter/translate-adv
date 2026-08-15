@@ -332,7 +332,7 @@ describe("runRetranslate", () => {
       chat: async () => ({
         content: "",
         finishReason: "stop",
-        usage: { promptTokens: 1, completionTokens: 0 },
+        usage: { promptTokens: 1, completionTokens: 0, totalTokens: 1 },
       }),
     });
     const res = await runRetranslate(
@@ -428,10 +428,15 @@ function echoChat(opts: { dropFirstLineOnce?: boolean } = {}) {
     const dropNow = opts.dropFirstLineOnce && !dropped;
     if (dropNow) dropped = true;
     const body = dropNow ? lines.slice(1) : lines;
+    const completionTokens = body.join("\n").length;
     return {
       content: body.join("\n"),
       finishReason: "stop",
-      usage: { promptTokens: req.user.length, completionTokens: body.join("\n").length },
+      usage: {
+        promptTokens: req.user.length,
+        completionTokens,
+        totalTokens: req.user.length + completionTokens,
+      },
     };
   };
 }

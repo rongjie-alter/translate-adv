@@ -165,6 +165,7 @@ export function useRetranslate() {
             baseUrl: preset.baseUrl,
             model: preset.model,
             maxOutputTokens: preset.limits.maxOutputTokens,
+            reasoningEffort: preset.reasoningEffort,
             maxInputTokens: store.settings.chunkInputTokens || preset.limits.maxInputTokens,
             systemPromptTemplate: store.settings.systemPrompt,
             speakers: artifactSpeakers(artifact),

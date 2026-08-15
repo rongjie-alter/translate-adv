@@ -41,11 +41,30 @@ describe("estimateTokens", () => {
         promptText,
         promptTokens: 1000,
         sourceTokens: 1000,
-        completionTokens: 700,
+        totalTokens: 1700,
       });
     }
     expect(cal.charsPerToken).toBeCloseTo(1, 1);
     expect(cal.outputRatio).toBeCloseTo(0.7, 1);
+  });
+
+  it("calibrates output cost from total_tokens, so hidden reasoning tokens are not invisible", () => {
+    // A reasoning model can spend most of the output budget on hidden "thinking"
+    // tokens that never appear in completion_tokens — total_tokens is the only
+    // field that reveals them (total - prompt = completion + hidden reasoning).
+    let cal = { charsPerToken: 1, outputRatio: 0.1, samples: 0 };
+    const promptText = "あ".repeat(1000);
+    for (let i = 0; i < 8; i++) {
+      cal = calibrate(cal, {
+        promptText,
+        promptTokens: 1000,
+        sourceTokens: 1000,
+        // completion_tokens would only be ~50, but total_tokens shows ~8000 was
+        // actually spent on the output side.
+        totalTokens: 9000,
+      });
+    }
+    expect(cal.outputRatio).toBeCloseTo(8, 0);
   });
 
   it("reports calls, tokens and whether the daily quota blocks the job", () => {
@@ -390,10 +409,15 @@ function echoChat(opts: { dropFirstLine?: boolean; dropFirstLineOnce?: boolean }
     const dropNow = opts.dropFirstLine || (opts.dropFirstLineOnce && !dropped);
     if (dropNow) dropped = true;
     const body = dropNow ? lines.slice(1) : lines;
+    const completionTokens = body.join("\n").length;
     return {
       content: body.join("\n"),
       finishReason: "stop",
-      usage: { promptTokens: req.user.length, completionTokens: body.join("\n").length },
+      usage: {
+        promptTokens: req.user.length,
+        completionTokens,
+        totalTokens: req.user.length + completionTokens,
+      },
     };
   };
 }

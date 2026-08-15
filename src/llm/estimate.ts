@@ -44,6 +44,15 @@ export interface Calibration {
  *
  * Solves `tokens = cjk / cpt + other / 4` for `cpt`, then blends with an
  * exponential moving average so a single odd response cannot swing the estimate.
+ *
+ * Output cost is derived as `totalTokens - promptTokens`, not the API's
+ * `completion_tokens`, because reasoning models (Gemini 3, o-series) spend most of
+ * `maxOutputTokens` on hidden "thinking" tokens that never appear in
+ * `completion_tokens` but still count against the cap — calibrating on
+ * `completion_tokens` alone would read that spend as near-zero and let the chunker
+ * keep building chunks the model can never finish. For a non-reasoning model
+ * `totalTokens` is just `promptTokens + completionTokens`, so this is a superset of
+ * the old signal, never a worse one.
  */
 export function calibrate(
   prev: Calibration,
@@ -51,7 +60,7 @@ export function calibrate(
     promptText: string;
     promptTokens: number;
     sourceTokens: number;
-    completionTokens: number;
+    totalTokens: number;
   },
 ): Calibration {
   const next = { ...prev, samples: prev.samples + 1 };
@@ -64,8 +73,9 @@ export function calibrate(
     next.charsPerToken = prev.charsPerToken * (1 - weight) + observed * weight;
   }
 
-  if (sample.sourceTokens > 0 && sample.completionTokens > 0) {
-    const observed = sample.completionTokens / sample.sourceTokens;
+  const outputTokens = sample.totalTokens - sample.promptTokens;
+  if (sample.sourceTokens > 0 && outputTokens > 0) {
+    const observed = outputTokens / sample.sourceTokens;
     next.outputRatio = prev.outputRatio * (1 - weight) + observed * weight;
   }
 

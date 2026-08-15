@@ -152,6 +152,7 @@ export function useTranslation() {
             baseUrl: preset.baseUrl,
             model: preset.model,
             maxOutputTokens: preset.limits.maxOutputTokens,
+            reasoningEffort: preset.reasoningEffort,
             systemPromptTemplate: store.settings.systemPrompt,
             speakers,
             labels: makeLabelMap(
