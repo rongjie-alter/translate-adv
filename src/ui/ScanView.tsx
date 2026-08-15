@@ -127,6 +127,19 @@ export function ScanView({ translation }: { translation: ReturnType<typeof useTr
                         disabled={translation.running}
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (status.kind === "done") {
+                            if (
+                              !window.confirm(
+                                `Redo "${c.name}"? This discards the current translation and re-translates from scratch.`,
+                              )
+                            ) {
+                              return;
+                            }
+                            setSelected(c.name);
+                            store.setView("translate");
+                            void translation.start(active.source, active.book, c.name, lang, { redo: true });
+                            return;
+                          }
                           setSelected(c.name);
                           store.setView("translate");
                           void translation.start(active.source, active.book, c.name, lang);

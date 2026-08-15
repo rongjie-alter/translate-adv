@@ -79,7 +79,13 @@ export function useTranslation() {
   }, []);
 
   const start = useCallback(
-    async (source: SourceRecord, book: Book, chapterName: string, lang: Lang) => {
+    async (
+      source: SourceRecord,
+      book: Book,
+      chapterName: string,
+      lang: Lang,
+      opts?: { redo?: boolean },
+    ) => {
       const chapter = book.chapters.find((c) => c.name === chapterName);
       if (!chapter) return;
 
@@ -104,6 +110,7 @@ export function useTranslation() {
       });
 
       const id = jobId(source.file, chapter.name, lang);
+      if (opts?.redo) await db.deleteJob(id);
       const previous = await db.getJob(id);
       const done = await db.getUnits(id);
       const job = reconcileJob(id, source, chapter.name, lang, preset.id, preset.model, chunks, previous, done);
