@@ -5,6 +5,7 @@ import { LANG_LABEL } from "../scenario/model";
 import { jobProgress } from "../orchestrator/job";
 import { useActiveBook, useStore } from "./store";
 import type { useTranslation } from "./useTranslation";
+import { CopyPre } from "./CopyPre";
 
 export function TranslateView({
   translation,
@@ -97,25 +98,25 @@ export function TranslateView({
                       </summary>
                       <div class="call-body">
                         <h4>System</h4>
-                        <pre>{c.system}</pre>
+                        <CopyPre text={c.system} />
                         <h4>User</h4>
-                        <pre>{c.user}</pre>
+                        <CopyPre text={c.user} />
                         {c.error ? (
                           <>
                             <h4>Error</h4>
-                            <pre class="warn">{c.error}</pre>
+                            <CopyPre class="warn" text={c.error} />
                           </>
                         ) : null}
                         {c.response ? (
                           <>
                             <h4>Response</h4>
-                            <pre>{c.response}</pre>
+                            <CopyPre text={c.response} />
                           </>
                         ) : null}
                         {c.reasoning ? (
                           <>
                             <h4>Thinking</h4>
-                            <pre>{c.reasoning}</pre>
+                            <CopyPre text={c.reasoning} />
                           </>
                         ) : null}
                       </div>
