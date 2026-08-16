@@ -62,6 +62,7 @@ export function glossaryBlock(speakers: Speaker[], lang: Lang): string {
     const display = s.nameText ?? s.jp;
     if (seen.has(display)) continue;
     seen.add(display);
+    if (!display.trim() || /^[？?]+$/.test(display.trim())) continue;
     if (s.tl?.[lang]) official.push(`  ${display} = ${speakerName(s, lang)}`);
     else rest.push(`  ${display}`);
   }
@@ -76,7 +77,7 @@ export function glossaryBlock(speakers: Speaker[], lang: Lang): string {
         rest.join("\n"),
     );
   }
-  return parts.join("\n") + "\n";
+  return parts.length ? parts.join("\n") + "\n" : "";
 }
 
 export const REPAIR_INSTRUCTION =
