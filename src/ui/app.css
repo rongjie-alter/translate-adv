@@ -151,7 +151,6 @@ progress { width: 100%; height: 0.6rem; }
 .call-body pre {
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 18rem;
   overflow: auto;
   background: #f7f7fb;
   border: 1px solid var(--line);
