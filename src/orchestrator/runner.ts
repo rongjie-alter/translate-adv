@@ -15,7 +15,7 @@ import type { Lang, Speaker } from "../scenario/model";
 import { serializeChunk } from "../scenario/serialize";
 import type { LabelMap } from "../scenario/labels";
 import type { Chunk } from "./chunker";
-import { isFatal, translateWire } from "./send";
+import { isFatal, translateWire, type CallEvent } from "./send";
 import { type Job, type JobChunk } from "./job";
 
 export type RunEvent =
@@ -26,7 +26,8 @@ export type RunEvent =
   | { type: "retry"; index: number; attempt: number; error: string }
   | { type: "repair"; index: number; missing: number }
   | { type: "log"; message: string }
-  | { type: "done"; failed: number };
+  | { type: "done"; failed: number }
+  | CallEvent;
 
 export interface RunnerDeps {
   limiter: Quota;

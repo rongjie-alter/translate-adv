@@ -29,7 +29,7 @@ import {
 } from "../scenario/serialize";
 import { artifactNodes, type Artifact } from "../storage/exchange";
 import { budgetParts } from "./chunker";
-import { isFatal, translateWire, type SendDeps } from "./send";
+import { isFatal, translateWire, type CallEvent, type SendDeps } from "./send";
 
 export interface ContextOptions {
   /** Units of context before each group. Matches `CONTEXT_LINES` in the runner. */
@@ -431,7 +431,8 @@ export type RetranslateEvent =
   | { type: "retry"; index: number; attempt: number; error: string }
   | { type: "repair"; index: number; missing: number }
   | { type: "log"; message: string }
-  | { type: "done"; translated: number; failed: number };
+  | { type: "done"; translated: number; failed: number }
+  | CallEvent;
 
 export interface RetranslateDeps extends Omit<SendDeps, "onEvent"> {
   systemPromptTemplate: string;

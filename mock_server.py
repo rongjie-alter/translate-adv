@@ -169,6 +169,22 @@ class Handler(BaseHTTPRequestHandler):
 
     prompt_tokens = count_tokens(system) + count_tokens(user)
     completion_tokens = count_tokens(content)
+
+    message = {"role": "assistant", "content": content}
+    usage = {
+      "prompt_tokens": prompt_tokens,
+      "completion_tokens": completion_tokens,
+      "total_tokens": prompt_tokens + completion_tokens,
+    }
+    # Mirrors Gemini's OpenAI-compat "include thoughts" response shape, so the
+    # per-call debug view can be exercised without a real Gemini key.
+    thinking_config = req.get("extra_body", {}).get("google", {}).get("thinking_config", {})
+    if thinking_config.get("include_thoughts"):
+      reasoning_tokens = max(1, completion_tokens // 4)
+      message["reasoning_content"] = f"(mock reasoning) considering {len(out)} line(s) in {lang}…"
+      usage["completion_tokens_details"] = {"reasoning_tokens": reasoning_tokens}
+      usage["total_tokens"] += reasoning_tokens
+
     self._send(200, {
       "id": f"chatcmpl-mock-{random.randint(1000, 9999)}",
       "object": "chat.completion",
@@ -176,14 +192,10 @@ class Handler(BaseHTTPRequestHandler):
       "model": req.get("model", MODEL_ID),
       "choices": [{
         "index": 0,
-        "message": {"role": "assistant", "content": content},
+        "message": message,
         "finish_reason": finish,
       }],
-      "usage": {
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "total_tokens": prompt_tokens + completion_tokens,
-      },
+      "usage": usage,
     })
 
 

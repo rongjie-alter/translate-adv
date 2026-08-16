@@ -130,6 +130,29 @@ progress { width: 100%; height: 0.6rem; }
 .log li.warn { color: var(--warn); }
 .log li.error { color: var(--err); }
 
+.status-banner { padding: 0.5rem 1.25rem; border-radius: 4px; margin: 0.5rem 0; }
+.status-banner.success { background: #e6f4ea; }
+.status-banner.error { background: #fce8e6; }
+
+.calls { list-style: none; padding: 0; margin: 1rem 0 0; font-size: 0.85rem; max-height: 24rem; overflow: auto; }
+.calls li { border-bottom: 1px solid #f0f0f4; }
+.calls summary { cursor: pointer; padding: 0.3rem 0; }
+.calls time { color: var(--muted); margin-right: 0.5rem; font-variant-numeric: tabular-nums; }
+.call-body { padding: 0.25rem 0 0.75rem 1rem; }
+.call-body h4 { margin: 0.5rem 0 0.15rem; font-size: 0.8rem; color: var(--muted); }
+.call-body pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 12rem;
+  overflow: auto;
+  background: #f7f7fb;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.5rem;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
 .resumable { margin-top: 2rem; border-top: 1px solid var(--line); padding-top: 1rem; }
 .resumable ul { list-style: none; padding: 0; }
 .resumable li { display: flex; align-items: center; gap: 1rem; padding: 0.35rem 0; }

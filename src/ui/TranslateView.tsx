@@ -56,9 +56,9 @@ export function TranslateView({
               Waiting {Math.ceil(s.waiting.ms / 1000)}s — {waitReason(s.waiting.reason)}
             </p>
           ) : null}
-          {s.error ? <p class="warn">{s.error}</p> : null}
+          {s.error ? <p class="warn status-banner error">{s.error}</p> : null}
           {s.finished && !s.error ? (
-            <p class="ok">
+            <p class="ok status-banner success">
               Done. Saved to the library.{" "}
               {/* `jobId` is `book::chapter::lang` — the same string as `artifactKey`. */}
               <button class="link" onClick={() => store.openReview(s.jobId)}>
@@ -77,6 +77,53 @@ export function TranslateView({
                 </li>
               ))}
           </ol>
+
+          {s.calls.length ? (
+            <ol class="calls">
+              {s.calls
+                .slice()
+                .reverse()
+                .map((c, i) => (
+                  <li key={i}>
+                    <details>
+                      <summary class={c.ok ? "ok" : "warn"}>
+                        <time>{new Date(c.at).toLocaleTimeString()}</time> #{c.index + 1} {c.kind} ·{" "}
+                        {c.status || "network error"}
+                        {c.usage
+                          ? ` · ${c.usage.promptTokens.toLocaleString()} in / ${c.usage.completionTokens.toLocaleString()} out${
+                              c.usage.reasoningTokens ? ` (+${c.usage.reasoningTokens.toLocaleString()} thinking)` : ""
+                            }`
+                          : ""}
+                      </summary>
+                      <div class="call-body">
+                        <h4>System</h4>
+                        <pre>{c.system}</pre>
+                        <h4>User</h4>
+                        <pre>{c.user}</pre>
+                        {c.error ? (
+                          <>
+                            <h4>Error</h4>
+                            <pre class="warn">{c.error}</pre>
+                          </>
+                        ) : null}
+                        {c.response ? (
+                          <>
+                            <h4>Response</h4>
+                            <pre>{c.response}</pre>
+                          </>
+                        ) : null}
+                        {c.reasoning ? (
+                          <>
+                            <h4>Thinking</h4>
+                            <pre>{c.reasoning}</pre>
+                          </>
+                        ) : null}
+                      </div>
+                    </details>
+                  </li>
+                ))}
+            </ol>
+          ) : null}
         </>
       ) : (
         <p class="empty">Nothing running. Pick a chapter on the Scan screen.</p>

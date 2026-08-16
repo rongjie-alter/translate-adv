@@ -312,6 +312,29 @@ describe("runJob", () => {
     expect(job.chunks.every((c) => c.status === "done")).toBe(true);
   });
 
+  it("records a call event for every attempt, including a failed retry", async () => {
+    let calls = 0;
+    const flaky = async (req: Parameters<typeof deps.chat>[0]): Promise<ChatResponse> => {
+      if (++calls === 1) throw new LlmError("boom", 503, true);
+      return echoChat()(req);
+    };
+    const { chunks, job, deps, events } = setup({ chat: flaky });
+    await runJob(job, chunks, "en", deps, new AbortController().signal);
+    const callEvents = events.filter((e) => e.type === "call");
+    expect(callEvents.length).toBeGreaterThanOrEqual(chunks.length + 1);
+    const failed = callEvents.find((e) => !e.ok);
+    expect(failed).toMatchObject({ kind: "initial", ok: false, status: 503, error: "boom" });
+    const succeeded = callEvents.filter((e) => e.ok);
+    expect(succeeded.every((e) => e.kind === "initial" && e.status === 200 && e.response)).toBe(true);
+  });
+
+  it("tags the repair round's call event as such", async () => {
+    const { chunks, job, deps, events } = setup({ chat: echoChat({ dropFirstLineOnce: true }) });
+    await runJob(job, chunks, "en", deps, new AbortController().signal);
+    const repairCalls = events.filter((e) => e.type === "call" && e.kind === "repair");
+    expect(repairCalls.length).toBeGreaterThan(0);
+  });
+
   it("stops early on a fatal error instead of burning quota on every chunk", async () => {
     const dead = async (): Promise<ChatResponse> => {
       throw new LlmError("bad key", 401, false);
@@ -413,6 +436,7 @@ function echoChat(opts: { dropFirstLine?: boolean; dropFirstLineOnce?: boolean }
     return {
       content: body.join("\n"),
       finishReason: "stop",
+      status: 200,
       usage: {
         promptTokens: req.user.length,
         completionTokens,

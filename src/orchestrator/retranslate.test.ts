@@ -332,6 +332,7 @@ describe("runRetranslate", () => {
       chat: async () => ({
         content: "",
         finishReason: "stop",
+        status: 200,
         usage: { promptTokens: 1, completionTokens: 0, totalTokens: 1 },
       }),
     });
@@ -432,6 +433,7 @@ function echoChat(opts: { dropFirstLineOnce?: boolean } = {}) {
     return {
       content: body.join("\n"),
       finishReason: "stop",
+      status: 200,
       usage: {
         promptTokens: req.user.length,
         completionTokens,

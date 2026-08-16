@@ -173,10 +173,3 @@ conditional-block test in `bilingual.test.ts`.
 
 `vite.config.ts` imports `defineConfig` from `vitest/config`, not `vite`, so the `test` key
 typechecks.
-
-## Untested surfaces
-
-The live Gemini endpoint has never been exercised (no key) — model id and free-tier limits in
-`presets.ts` are best-effort and user-editable. `showDirectoryPicker` needs an OS dialog, so only
-the folder logic behind it is covered (`fsa.test.ts` uses a stub handle); the operations take a
-`DirectoryHandle` explicitly for exactly that reason.

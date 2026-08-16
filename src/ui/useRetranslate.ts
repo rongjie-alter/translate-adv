@@ -306,6 +306,8 @@ function onEvent(
         return { ...s, waiting: { ms: e.ms, reason: e.reason } };
       case "log":
         return add("info", e.message);
+      case "call":
+        return s;
       case "done":
         return add(
           e.failed ? "warn" : "info",

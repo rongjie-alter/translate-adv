@@ -25,6 +25,21 @@ export interface LogLine {
   text: string;
 }
 
+/** One HTTP attempt to the endpoint — for the per-call debug view in the Translate tab. */
+export interface CallRecord {
+  at: number;
+  index: number;
+  kind: "initial" | "repair";
+  system: string;
+  user: string;
+  ok: boolean;
+  status: number;
+  error?: string;
+  response?: string;
+  reasoning?: string;
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number; reasoningTokens?: number };
+}
+
 export interface RunState {
   jobId: string;
   chapter: string;
@@ -36,6 +51,7 @@ export interface RunState {
   usage: { requests: number; promptTokens: number; completionTokens: number };
   waiting: { ms: number; reason: string } | null;
   log: LogLine[];
+  calls: CallRecord[];
   finished: boolean;
   error?: string;
 }
@@ -130,6 +146,7 @@ export function useTranslation() {
         usage: { ...job.usage },
         waiting: null,
         log: [],
+        calls: [],
         finished: false,
       });
       if (already) log(`Resuming: ${already} of ${chunks.length} chunks already translated.`);
@@ -250,6 +267,26 @@ function onEvent(e: RunEvent, setState: (fn: (s: RunState | null) => RunState | 
         return { ...s, waiting: { ms: e.ms, reason: e.reason } };
       case "log":
         return add("info", e.message);
+      case "call":
+        return {
+          ...s,
+          calls: [
+            ...s.calls.slice(-200),
+            {
+              at: Date.now(),
+              index: e.index,
+              kind: e.kind,
+              system: e.system,
+              user: e.user,
+              ok: e.ok,
+              status: e.status,
+              error: e.error,
+              response: e.response,
+              reasoning: e.reasoning,
+              usage: e.usage,
+            },
+          ],
+        };
       case "done":
         return add(e.failed ? "warn" : "info", e.failed ? `Finished with ${e.failed} failed chunk(s).` : "Finished.");
     }

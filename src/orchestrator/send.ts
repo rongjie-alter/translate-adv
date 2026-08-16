@@ -25,7 +25,23 @@ export type SendEvent =
   | { type: "waiting"; ms: number; reason: string }
   | { type: "retry"; index: number; attempt: number; error: string }
   | { type: "repair"; index: number; missing: number }
-  | { type: "log"; message: string };
+  | { type: "log"; message: string }
+  | CallEvent;
+
+/** One record per HTTP attempt — success or failure, initial or repair round. */
+export interface CallEvent {
+  type: "call";
+  index: number;
+  kind: "initial" | "repair";
+  system: string;
+  user: string;
+  ok: boolean;
+  status: number;
+  error?: string;
+  response?: string;
+  reasoning?: string;
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number; reasoningTokens?: number };
+}
 
 export interface SendDeps {
   limiter: Quota;
@@ -51,10 +67,13 @@ export async function sendRequest(args: {
   estimate: number;
   /** Only used to label events. */
   index: number;
+  /** Which kind of call this is, for the per-call debug view. */
+  kind?: "initial" | "repair";
   deps: SendDeps;
   signal: AbortSignal;
 }): Promise<ChatResponse> {
   const { system, user, estimate, index, deps, signal } = args;
+  const kind = args.kind ?? "initial";
   const call = deps.chat ?? chat;
   let lastError: unknown;
 
@@ -88,10 +107,33 @@ export async function sendRequest(args: {
         signal,
       });
       deps.limiter.settle(estimate, res.usage.promptTokens || estimate);
+      deps.onEvent({
+        type: "call",
+        index,
+        kind,
+        system,
+        user,
+        ok: true,
+        status: res.status,
+        response: res.content,
+        reasoning: res.reasoning,
+        usage: res.usage,
+      });
       return res;
     } catch (e) {
       if (signal.aborted) throw e;
       lastError = e;
+      const status = e instanceof LlmError ? e.status : 0;
+      deps.onEvent({
+        type: "call",
+        index,
+        kind,
+        system,
+        user,
+        ok: false,
+        status,
+        error: (e as Error).message,
+      });
       if (!(e instanceof LlmError) || !e.retryable) throw e;
       if (e.status === 429) deps.limiter.penalize(e.retryAfter ?? 30);
       const wait = backoffMs(attempt, e.retryAfter);
@@ -136,6 +178,7 @@ export async function translateWire(args: {
       user: body,
       estimate: est,
       index,
+      kind: "repair",
       deps,
       signal,
     });

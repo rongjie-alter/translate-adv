@@ -24,6 +24,8 @@ export interface Usage {
   completionTokens: number;
   /** `completionTokens` plus any hidden reasoning tokens billed against `maxOutputTokens`. */
   totalTokens: number;
+  /** Hidden "thinking" tokens, when the endpoint breaks them out (e.g. Gemini + `include_thoughts`). */
+  reasoningTokens?: number;
 }
 
 export interface ChatResponse {
@@ -31,7 +33,14 @@ export interface ChatResponse {
   usage: Usage;
   /** `length` means the model ran out of output budget — the caller must repair. */
   finishReason: string;
+  /** HTTP status of the response — always 2xx here, since a non-ok status throws. */
+  status: number;
+  /** The model's "thinking" text, when the endpoint returns it (best-effort, untested live). */
+  reasoning?: string;
 }
+
+/** Gemini's OpenAI-compat layer; asking it to include thoughts needs this exact host check. */
+const GEMINI_HOST = "generativelanguage.googleapis.com";
 
 export class LlmError extends Error {
   constructor(
@@ -65,7 +74,27 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
         ],
         temperature: req.temperature ?? 0.3,
         ...(req.maxOutputTokens ? { max_tokens: req.maxOutputTokens } : {}),
-        ...(req.reasoningEffort ? { reasoning_effort: req.reasoningEffort } : {}),
+        // Gemini's OpenAI-compat layer rejects a request carrying both `reasoning_effort`
+        // and `extra_body.google.thinking_config` — only send the former off-Gemini.
+        ...(req.reasoningEffort && !req.baseUrl.includes(GEMINI_HOST)
+          ? { reasoning_effort: req.reasoningEffort }
+          : {}),
+        ...(req.baseUrl.includes(GEMINI_HOST)
+          ? {
+            extra_body: {
+              google: {
+                thinking_config: {
+                  include_thoughts: true,
+                  // "none" isn't a valid thinking_level — leaving it off lets the
+                  // model pick its own default instead of sending a bad value.
+                  ...(req.reasoningEffort && req.reasoningEffort !== "none"
+                    ? { thinking_level: req.reasoningEffort }
+                    : {}),
+                },
+              },
+            },
+            }
+          : {}),
       }),
       signal: req.signal,
     });
@@ -88,8 +117,13 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
   }
 
   const json = (await res.json()) as {
-    choices?: { message?: { content?: string }; finish_reason?: string }[];
-    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    choices?: { message?: { content?: string; reasoning_content?: string }; finish_reason?: string }[];
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+      completion_tokens_details?: { reasoning_tokens?: number };
+    };
   };
   const choice = json.choices?.[0];
   if (!choice?.message?.content) {
@@ -98,15 +132,19 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
 
   const promptTokens = json.usage?.prompt_tokens ?? 0;
   const completionTokens = json.usage?.completion_tokens ?? 0;
+  const reasoningTokens = json.usage?.completion_tokens_details?.reasoning_tokens;
   return {
     content: choice.message.content,
     finishReason: choice.finish_reason ?? "stop",
+    status: res.status,
+    reasoning: choice.message.reasoning_content,
     usage: {
       promptTokens,
       completionTokens,
       // Falls back to prompt+completion for endpoints that omit total_tokens; for a
       // reasoning model this field is what actually carries the hidden thinking cost.
       totalTokens: json.usage?.total_tokens ?? promptTokens + completionTokens,
+      ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
     },
   };
 }
