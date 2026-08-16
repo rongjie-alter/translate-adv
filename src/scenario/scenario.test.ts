@@ -159,6 +159,20 @@ describe("parse.py --tl_meta attributes", () => {
     expect(speaker.jp).toBe("花子");
     expect(speaker.pose).toBe("通常");
     expect(speaker.tl).toEqual({ en: "Hanako", "zh-hans": "花子", "zh-hant": "花子" });
+    expect(speaker.nameText).toBeUndefined();
+  });
+
+  it("surfaces nameText when a costume-suffixed CharacterName resolves to a base name", () => {
+    const html = `<body data-parse-version="3">
+<h3 id="ch1">ch1</h3>
+<div class="label" id="ch1_a">Label: ch1_a</div>
+<div class="text" data-chara-id="0" data-pose="法被"><span class="chara">花子法被 (法被):</span> こんにちは</div>
+<script type="application/json" id="chara-meta">{"0":{"chara":"花子法被","nameText":"花子","en":"Hanako","zh-hans":"花子","zh-hant":"花子"}}</script>
+</body>`;
+    const book = parseBookHtml("synthetic.book.html", html);
+    const speaker = chapterSpeakers(book.chapters[0])[0];
+    expect(speaker.jp).toBe("花子法被");
+    expect(speaker.nameText).toBe("花子");
   });
 
   it("reports hasCharaMeta false for legacy inline attributes, while names still resolve", () => {
@@ -226,6 +240,17 @@ describe("serializeChunk", () => {
 
   it("prefixes selections with their branch target", () => {
     expect(chunk.text).toMatch(/^\d+ >\S+ （飛び起きる）$/m);
+  });
+
+  it("keeps the speaker prefix in Japanese even when an official translation exists", () => {
+    const withSpeaker = ch.nodes.find(
+      (n): n is TextNode => n.kind === "text" && !!n.speaker?.tl?.en,
+    );
+    expect(withSpeaker).toBeDefined();
+    const solo = serializeChunk([withSpeaker!], { labels, lang: "en" });
+    const displayName = withSpeaker!.speaker!.nameText ?? withSpeaker!.speaker!.jp;
+    expect(solo.text).toContain(`${displayName}: `);
+    expect(solo.text).not.toContain(`${withSpeaker!.speaker!.tl!.en}: `);
   });
 
   it("includes carry-over context lines", () => {

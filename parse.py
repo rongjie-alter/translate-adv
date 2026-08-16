@@ -574,7 +574,10 @@ document.querySelector("#ruby-btn").onclick = function() {
     if arg1 not in self.chara_ids:
       cid = str(len(self.chara_ids))
       self.chara_ids[arg1] = cid
+      display = self.getCharacter(arg1)
       entry = {"chara": arg1}
+      if display != arg1:
+        entry["nameText"] = display
       entry.update(self.officialNames(arg1))
       self.chara_meta[cid] = entry
     return self.chara_ids[arg1]

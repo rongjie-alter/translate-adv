@@ -25,6 +25,7 @@ const META_LANG_ATTR: Record<Lang, string> = {
 /** One entry of the `#chara-meta` dictionary parse.py embeds: id -> official names. */
 interface CharaMetaEntry {
   chara: string;
+  nameText?: string;
   en?: string;
   "zh-hans"?: string;
   "zh-hant"?: string;
@@ -177,6 +178,7 @@ function readSpeaker(el: Element, charaMeta: Record<string, CharaMetaEntry>): Sp
     jp,
     ...(pose ? { pose } : {}),
     ...(Object.keys(tl).length ? { tl } : {}),
+    ...(meta?.nameText ? { nameText: meta.nameText } : {}),
   };
 }
 

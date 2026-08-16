@@ -45,6 +45,12 @@ export function speakerName(s: Speaker, lang: Lang): string {
   return s.tl?.[lang] || s.jp;
 }
 
+/** Speaker name for the wire line: always Japanese (this is source text), using the
+ *  clean base name when parse.py resolved one, else the raw costume-suffixed label. */
+function sourceSpeakerName(s: Speaker): string {
+  return s.nameText ?? s.jp;
+}
+
 /** Structure sent as context; never numbered, never echoed back. */
 export type StructureNode = LabelNode | JumpNode | CondNode | CondEndNode;
 
@@ -63,10 +69,10 @@ function renderStructure(node: StructureNode, labels: LabelMap): string {
 }
 
 /** What sits between a line's number and its text. Shared by both serializers. */
-function renderPrefix(node: TranslatableNode, labels: LabelMap, lang: Lang): string {
+function renderPrefix(node: TranslatableNode, labels: LabelMap): string {
   if (node.kind === "select") return `>${labels.alias(node.to)} `;
   if (node.kind === "title") return "# ";
-  if (node.speaker) return `${speakerName(node.speaker, lang)}: `;
+  if (node.speaker) return `${sourceSpeakerName(node.speaker)}: `;
   return "";
 }
 
@@ -83,7 +89,7 @@ export function serializeChunk(nodes: SceneNode[], opts: SerializeOptions): Wire
   for (const node of nodes) {
     if (isTranslatable(node)) {
       const n = lines.length + 1;
-      out.push(`${n} ${renderPrefix(node, opts.labels, opts.lang)}${node.src}`);
+      out.push(`${n} ${renderPrefix(node, opts.labels)}${node.src}`);
       lines.push(toWireLine(node, n));
     } else {
       out.push(renderStructure(node, opts.labels));
@@ -153,7 +159,7 @@ export function serializeSelection(
           break;
         case "target": {
           const n = lines.length + 1;
-          out.push(`${n} ${renderPrefix(item.node, opts.labels, opts.lang)}${item.node.src}`);
+          out.push(`${n} ${renderPrefix(item.node, opts.labels)}${item.node.src}`);
           lines.push(toWireLine(item.node, n));
           break;
         }

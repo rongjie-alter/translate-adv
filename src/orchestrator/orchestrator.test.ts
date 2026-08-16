@@ -418,6 +418,22 @@ describe("buildSystemPrompt", () => {
     expect(p).toContain("火のテンジン = 天神");
     expect(p).toContain("タサブロウ");
   });
+
+  it("uses nameText instead of the costume-suffixed jp label when present", () => {
+    const p = buildSystemPrompt(DEFAULT_SYSTEM_PROMPT, "en", [
+      { jp: "オニワカ法被", nameText: "オニワカ", tl: { en: "Oniwaka" } },
+    ]);
+    expect(p).toContain("オニワカ = Oniwaka");
+    expect(p).not.toContain("オニワカ法被");
+  });
+
+  it("dedupes glossary lines when costume variants share a nameText", () => {
+    const p = buildSystemPrompt(DEFAULT_SYSTEM_PROMPT, "en", [
+      { jp: "オニワカ法被", nameText: "オニワカ", tl: { en: "Oniwaka" } },
+      { jp: "オニワカ普段着", nameText: "オニワカ", tl: { en: "Oniwaka" } },
+    ]);
+    expect(p.match(/オニワカ = Oniwaka/g)).toHaveLength(1);
+  });
 });
 
 /** Stand-in endpoint: echoes each numbered line back with a prefix. */

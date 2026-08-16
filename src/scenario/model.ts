@@ -25,6 +25,9 @@ export interface Speaker {
   pose?: string;
   /** Official name per language, present only when `parse.py --tl_meta` wrote it. */
   tl?: Partial<Record<Lang, string>>;
+  /** Base name (Character.xls `NameText`), when it differs from the costume-specific
+   *  `jp` label; present only when `parse.py --tl_meta` resolved one. */
+  nameText?: string;
 }
 
 export type SceneNode =

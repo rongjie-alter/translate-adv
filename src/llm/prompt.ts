@@ -55,20 +55,25 @@ export function buildSystemPrompt(template: string, lang: Lang, speakers: Speake
  */
 export function glossaryBlock(speakers: Speaker[], lang: Lang): string {
   if (!speakers.length) return "";
-  const official = speakers.filter((s) => s.tl?.[lang]);
-  const rest = speakers.filter((s) => !s.tl?.[lang]);
+  const seen = new Set<string>();
+  const official: string[] = [];
+  const rest: string[] = [];
+  for (const s of speakers) {
+    const display = s.nameText ?? s.jp;
+    if (seen.has(display)) continue;
+    seen.add(display);
+    if (s.tl?.[lang]) official.push(`  ${display} = ${speakerName(s, lang)}`);
+    else rest.push(`  ${display}`);
+  }
 
   const parts: string[] = [];
   if (official.length) {
-    parts.push(
-      "\nUse these official character names exactly:\n" +
-        official.map((s) => `  ${s.jp} = ${speakerName(s, lang)}`).join("\n"),
-    );
+    parts.push("\nUse these official character names exactly:\n" + official.join("\n"));
   }
   if (rest.length) {
     parts.push(
       "\nCharacters in this scene (translate their names consistently throughout):\n" +
-        rest.map((s) => `  ${s.jp}`).join("\n"),
+        rest.join("\n"),
     );
   }
   return parts.join("\n") + "\n";
