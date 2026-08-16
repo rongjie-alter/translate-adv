@@ -97,7 +97,15 @@ export const RETRANSLATE_INSTRUCTION =
   "the same output rules.";
 
 /** A user's free-text note for one retranslation, as a system-prompt block. */
-export function hintBlock(hint: string): string {
+export function hintBlock(hint: string, label = "Additional instructions for these lines:"): string {
   const trimmed = hint.trim();
-  return trimmed ? `\n\nAdditional instructions for these lines:\n${trimmed}` : "";
+  return trimmed ? `\n\n${label}\n${trimmed}` : "";
+}
+
+/**
+ * A per-file free-text note — known name translations, character relationships,
+ * scene context — configured on the Scan tab and sent with every chunk of that file.
+ */
+export function fileNoteBlock(note: string): string {
+  return hintBlock(note, "Additional context for this file, from the translator:");
 }

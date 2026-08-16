@@ -6,7 +6,7 @@
  */
 import { useMemo, useRef, useState } from "preact/hooks";
 import { estimateJob } from "../llm/estimate";
-import { buildSystemPrompt } from "../llm/prompt";
+import { buildSystemPrompt, fileNoteBlock } from "../llm/prompt";
 import { serializeChunk } from "../scenario/serialize";
 import { makeLabelMap } from "../scenario/labels";
 import { LANGS, LANG_LABEL, type Chapter } from "../scenario/model";
@@ -113,6 +113,16 @@ export function ScanView({
               for better name consistency.
             </p>
           ) : null}
+
+          <label class="file-note-label">
+            Extra context for this file (known names, character relationships, tone — sent with every
+            request)
+            <FileNote
+              key={active.source.id}
+              note={active.source.note ?? ""}
+              onSave={(note) => void store.updateSourceNote(active.source.id, note)}
+            />
+          </label>
 
           <table class="chapters">
             <thead>
@@ -245,7 +255,9 @@ export function ScanView({
     return useMemo(() => {
       if (!c) return null;
       const cal = store.calibrationFor(preset.model, lang);
-      const system = buildSystemPrompt(store.settings.systemPrompt, lang, chapterSpeakers(c));
+      const system =
+        buildSystemPrompt(store.settings.systemPrompt, lang, chapterSpeakers(c)) +
+        fileNoteBlock(active?.source.note ?? "");
       const chunks = chunksFor(c, {
         maxInputTokens: store.settings.chunkInputTokens || preset.limits.maxInputTokens,
         maxOutputTokens: preset.limits.maxOutputTokens,
@@ -269,8 +281,29 @@ export function ScanView({
         }),
         samples: cal.samples,
       };
-    }, [c, lang, preset, store.settings, store.artifacts]);
+    }, [c, lang, preset, store.settings, store.artifacts, active?.source.note]);
   }
+}
+
+/**
+ * Local draft state, keyed by source id via the `key` prop on the caller — so
+ * switching files remounts this with the new file's saved note instead of carrying
+ * over a stale draft. Persists on blur rather than per keystroke.
+ */
+function FileNote({ note, onSave }: { note: string; onSave: (note: string) => void }) {
+  const [value, setValue] = useState(note);
+  return (
+    <textarea
+      class="file-note"
+      rows={2}
+      placeholder='e.g. "タサブロウ is teenager."'
+      value={value}
+      onInput={(e) => setValue((e.target as HTMLTextAreaElement).value)}
+      onBlur={() => {
+        if (value !== note) onSave(value);
+      }}
+    />
+  );
 }
 
 function formatDuration(seconds: number): string {

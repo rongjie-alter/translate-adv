@@ -42,6 +42,8 @@ export interface SourceRecord {
   srcHash: string;
   html: string;
   addedAt: number;
+  /** Free-text glossary/context the user attaches to this file, sent with every chunk. */
+  note?: string;
 }
 
 export interface UnitRecord {

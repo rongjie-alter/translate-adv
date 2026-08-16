@@ -68,6 +68,7 @@ export interface Store {
   saveSettings(patch: Partial<Settings>): Promise<void>;
   addFiles(files: File[]): Promise<void>;
   removeSource(id: string): Promise<void>;
+  updateSourceNote(id: string, note: string): Promise<void>;
   refreshJobs(): Promise<void>;
   saveArtifact(a: Artifact): Promise<void>;
   removeArtifact(key: string): Promise<void>;
@@ -205,6 +206,16 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     [toast],
   );
 
+  const updateSourceNote = useCallback(async (id: string, note: string) => {
+    setSources((prev) => {
+      const rec = prev.find((s) => s.id === id);
+      if (!rec) return prev;
+      const next = { ...rec, note };
+      void db.putSource(next);
+      return prev.map((s) => (s.id === id ? next : s));
+    });
+  }, []);
+
   const removeSource = useCallback(async (id: string) => {
     await db.deleteSource(id);
     setSources((prev) => prev.filter((s) => s.id !== id));
@@ -312,6 +323,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     saveSettings,
     addFiles,
     removeSource,
+    updateSourceNote,
     refreshJobs,
     saveArtifact,
     removeArtifact,

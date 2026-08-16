@@ -10,7 +10,7 @@
 import type { chat } from "../llm/client";
 import { calibrate, estimateTokens, type Calibration } from "../llm/estimate";
 import type { Quota } from "../llm/limiter";
-import { buildSystemPrompt } from "../llm/prompt";
+import { buildSystemPrompt, fileNoteBlock } from "../llm/prompt";
 import type { Lang, Speaker } from "../scenario/model";
 import { serializeChunk } from "../scenario/serialize";
 import type { LabelMap } from "../scenario/labels";
@@ -38,6 +38,8 @@ export interface RunnerDeps {
   /** Caps "thinking" tokens on reasoning models. `none`/`low`/`medium`/`high`. */
   reasoningEffort?: string;
   systemPromptTemplate: string;
+  /** Per-file free-text note (glossary, character context) configured on the Scan tab. */
+  fileNote?: string;
   speakers: Speaker[];
   labels: LabelMap;
   calibration: Calibration;
@@ -60,7 +62,8 @@ export async function runJob(
   deps: RunnerDeps,
   signal: AbortSignal,
 ): Promise<Job> {
-  const system = buildSystemPrompt(deps.systemPromptTemplate, lang, deps.speakers);
+  const system =
+    buildSystemPrompt(deps.systemPromptTemplate, lang, deps.speakers) + fileNoteBlock(deps.fileNote ?? "");
   let context: string[] = [];
   let calibration = deps.calibration;
 

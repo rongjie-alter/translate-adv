@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { estimateTokens } from "../llm/estimate";
 import { RateLimiter, emptyState } from "../llm/limiter";
 import type { Preset } from "../llm/presets";
-import { buildSystemPrompt } from "../llm/prompt";
+import { buildSystemPrompt, fileNoteBlock } from "../llm/prompt";
 import { chunkNodes, type Chunk } from "../orchestrator/chunker";
 import { isComplete, jobId, type Job, type JobChunk } from "../orchestrator/job";
 import { runJob, type RunEvent } from "../orchestrator/runner";
@@ -116,7 +116,8 @@ export function useTranslation() {
 
       const calibration = store.calibrationFor(preset.model, lang);
       const speakers = chapterSpeakers(chapter);
-      const system = buildSystemPrompt(store.settings.systemPrompt, lang, speakers);
+      const system =
+        buildSystemPrompt(store.settings.systemPrompt, lang, speakers) + fileNoteBlock(source.note ?? "");
       const maxInputTokens = store.settings.chunkInputTokens || preset.limits.maxInputTokens;
       const chunks = chunksFor(chapter, {
         maxInputTokens,
@@ -172,6 +173,7 @@ export function useTranslation() {
             maxOutputTokens: preset.limits.maxOutputTokens,
             reasoningEffort: preset.reasoningEffort,
             systemPromptTemplate: store.settings.systemPrompt,
+            fileNote: source.note,
             speakers,
             labels: makeLabelMap(
               chapter.nodes.flatMap((n) =>
