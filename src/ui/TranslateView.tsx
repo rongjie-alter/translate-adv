@@ -149,7 +149,11 @@ export function TranslateView({
                   <button
                     disabled={busy || !source || !book}
                     title={source ? "" : "Load the original .book.html again to continue"}
-                    onClick={() => void translation.start(source!, book!, j.chapter, j.lang)}
+                    onClick={() => {
+                      const preset =
+                        store.settings.presets.find((p) => p.id === j.presetId) ?? store.activePreset();
+                      void translation.start(source!, book!, j.chapter, j.lang, preset);
+                    }}
                   >
                     Continue
                   </button>

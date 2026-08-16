@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { estimateTokens } from "../llm/estimate";
 import { RateLimiter, emptyState } from "../llm/limiter";
+import type { Preset } from "../llm/presets";
 import { buildSystemPrompt } from "../llm/prompt";
 import { chunkNodes, type Chunk } from "../orchestrator/chunker";
 import { isComplete, jobId, type Job, type JobChunk } from "../orchestrator/job";
@@ -100,13 +101,13 @@ export function useTranslation() {
       book: Book,
       chapterName: string,
       lang: Lang,
+      preset: Preset,
       opts?: { redo?: boolean },
     ) => {
       const chapter = book.chapters.find((c) => c.name === chapterName);
       if (!chapter) return;
 
-      const preset = store.activePreset();
-      const apiKey = store.apiKey();
+      const apiKey = store.apiKey(preset);
       if (!apiKey && !preset.baseUrl.includes("localhost")) {
         store.toast("Add an API key for this endpoint in Settings first.", "error");
         store.setView("settings");

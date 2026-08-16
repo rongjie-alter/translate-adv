@@ -27,7 +27,9 @@ export function ScanView({
   const active = useActiveBook();
   const fileInput = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [presetId, setPresetId] = useState(store.settings.presetId);
   const lang = store.settings.targetLang;
+  const preset = store.settings.presets.find((p) => p.id === presetId) ?? store.activePreset();
 
   const chapter = active?.book.chapters.find((c) => c.name === selected) ?? null;
   const estimate = useEstimate(chapter);
@@ -66,6 +68,17 @@ export function ScanView({
         ) : null}
 
         <span class="spacer" />
+
+        <label>
+          LLM{" "}
+          <select value={presetId} onChange={(e) => setPresetId((e.target as HTMLSelectElement).value)}>
+            {store.settings.presets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <label>
           Target language{" "}
@@ -155,12 +168,12 @@ export function ScanView({
                             }
                             setSelected(c.name);
                             store.setView("translate");
-                            void translation.start(active.source, active.book, c.name, lang, { redo: true });
+                            void translation.start(active.source, active.book, c.name, lang, preset, { redo: true });
                             return;
                           }
                           setSelected(c.name);
                           store.setView("translate");
-                          void translation.start(active.source, active.book, c.name, lang);
+                          void translation.start(active.source, active.book, c.name, lang, preset);
                         }}
                       >
                         {status.kind === "partial" ? "Continue" : status.kind === "done" ? "Redo" : "Translate"}
@@ -194,7 +207,7 @@ export function ScanView({
                 </div>
                 <div>
                   <dt>Model</dt>
-                  <dd>{store.activePreset().model}</dd>
+                  <dd>{preset.model}</dd>
                 </div>
               </dl>
               <p class="hint">
@@ -204,7 +217,7 @@ export function ScanView({
               </p>
               {estimate.exceedsDaily ? (
                 <p class="warn">
-                  This exceeds the remaining daily request quota ({store.activePreset().limits.rpd}/day).
+                  This exceeds the remaining daily request quota ({preset.limits.rpd}/day).
                   It will translate as far as it can and resume after the quota resets.
                 </p>
               ) : null}
@@ -231,7 +244,6 @@ export function ScanView({
   function useEstimate(c: Chapter | null) {
     return useMemo(() => {
       if (!c) return null;
-      const preset = store.activePreset();
       const cal = store.calibrationFor(preset.model, lang);
       const system = buildSystemPrompt(store.settings.systemPrompt, lang, chapterSpeakers(c));
       const chunks = chunksFor(c, {
@@ -257,7 +269,7 @@ export function ScanView({
         }),
         samples: cal.samples,
       };
-    }, [c, lang, store.settings, store.artifacts]);
+    }, [c, lang, preset, store.settings, store.artifacts]);
   }
 }
 
