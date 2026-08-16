@@ -77,6 +77,11 @@ export function useTranslation() {
   const store = useStore();
   const [state, setState] = useState<RunState | null>(null);
   const abort = useRef<AbortController | null>(null);
+  // `state` only flips to non-null after the async prep (IndexedDB reads) below
+  // resolves, so it cannot gate re-entrancy — a second `start()` call fired inside
+  // that window would run concurrently against the same `state`/`abort` slot and
+  // corrupt both jobs' progress. This ref is set synchronously, before any await.
+  const busy = useRef(false);
   const running = !!state && !state.finished;
 
   // Closing the tab loses at most the chunk in flight, but that is still a wasted
@@ -104,131 +109,151 @@ export function useTranslation() {
       preset: Preset,
       opts?: { redo?: boolean },
     ) => {
-      const chapter = book.chapters.find((c) => c.name === chapterName);
-      if (!chapter) return;
-
-      const apiKey = store.apiKey(preset);
-      if (!apiKey && !preset.baseUrl.includes("localhost")) {
-        store.toast("Add an API key for this endpoint in Settings first.", "error");
-        store.setView("settings");
+      if (busy.current) {
+        store.toast("A translation is already running — stop it before starting another.", "error");
         return;
       }
-
-      const calibration = store.calibrationFor(preset.model, lang);
-      const speakers = chapterSpeakers(chapter);
-      const system =
-        buildSystemPrompt(store.settings.systemPrompt, lang, speakers) + fileNoteBlock(source.note ?? "");
-      const maxInputTokens = store.settings.chunkInputTokens || preset.limits.maxInputTokens;
-      const chunks = chunksFor(chapter, {
-        maxInputTokens,
-        maxOutputTokens: preset.limits.maxOutputTokens,
-        charsPerToken: calibration.charsPerToken,
-        outputRatio: calibration.outputRatio,
-        systemPrompt: system,
-      });
-
-      const id = jobId(source.file, chapter.name, lang);
-      if (opts?.redo) await db.deleteJob(id);
-      const previous = await db.getJob(id);
-      const done = await db.getUnits(id);
-      const job = reconcileJob(id, source, chapter.name, lang, preset.id, preset.model, chunks, previous, done);
-      await db.putJob(job);
-
-      const unitsTotal = chapter.nodes.filter(isTranslatable).length;
-      const already = job.chunks.filter((c) => c.status === "done").length;
-      abort.current = new AbortController();
-      setState({
-        jobId: id,
-        chapter: chapter.name,
-        lang,
-        chunksDone: already,
-        chunksTotal: chunks.length,
-        unitsDone: done.size,
-        unitsTotal,
-        usage: { ...job.usage },
-        waiting: null,
-        log: [],
-        calls: [],
-        finished: false,
-      });
-      if (already) log(`Resuming: ${already} of ${chunks.length} chunks already translated.`);
-
-      const limiter = new RateLimiter(
-        preset.limits,
-        preset.quotaResetTz,
-        store.settings.limiter[preset.id] ?? emptyState(),
-        (s) => void store.saveSettings({ limiter: { ...store.settings.limiter, [preset.id]: s } }),
-      );
-
+      busy.current = true;
       try {
-        const finished = await runJob(
-          job,
-          chunks,
-          lang,
-          {
-            limiter,
-            apiKey,
-            baseUrl: preset.baseUrl,
-            model: preset.model,
-            maxOutputTokens: preset.limits.maxOutputTokens,
-            reasoningEffort: preset.reasoningEffort,
-            systemPromptTemplate: store.settings.systemPrompt,
-            fileNote: source.note,
-            speakers,
-            labels: makeLabelMap(
-              chapter.nodes.flatMap((n) =>
-                n.kind === "label" ? [n.id] : n.kind === "jump" ? [n.to] : [],
-              ),
-            ),
-            calibration,
-            saveUnits: async (chunk, translations) => {
-              await db.putUnits(id, translations);
-              setState((s) =>
-                s ? { ...s, unitsDone: s.unitsDone + translations.size } : s,
-              );
-              void chunk;
-            },
-            saveJob: async (j) => {
-              await db.putJob(j);
-            },
-            onCalibration: (c) => {
-              void store.saveSettings({
-                calibration: { ...store.settings.calibration, [`${preset.model}:${lang}`]: c },
-              });
-            },
-            onEvent: (e) => onEvent(e, setState),
-          },
-          abort.current.signal,
-        );
-
-        await store.refreshJobs();
-        const translations = await db.getUnits(id);
-        await store.saveArtifact(
-          buildArtifact({
-            book: source.file,
-            srcHash: source.srcHash,
-            chapter,
-            lang,
-            model: preset.model,
-            translations,
-            generatedAt: Date.now(),
-          }),
-        );
-
-        setState((s) => (s ? { ...s, finished: true } : s));
-        if (isComplete(finished)) {
-          store.toast(`${chapter.name} finished — saved to the library.`);
-        } else {
-          store.toast(`${chapter.name} stopped with chunks left. Progress is saved; press Continue.`, "error");
-        }
-      } catch (e) {
-        const message = abort.current?.signal.aborted ? "Stopped. Progress is saved." : (e as Error).message;
-        setState((s) => (s ? { ...s, finished: true, error: message } : s));
-        await store.refreshJobs();
+        await doStart(source, book, chapterName, lang, preset, opts);
+      } finally {
+        busy.current = false;
       }
     },
     [store, log],
   );
+
+  async function doStart(
+    source: SourceRecord,
+    book: Book,
+    chapterName: string,
+    lang: Lang,
+    preset: Preset,
+    opts?: { redo?: boolean },
+  ) {
+    const chapter = book.chapters.find((c) => c.name === chapterName);
+    if (!chapter) return;
+
+    const apiKey = store.apiKey(preset);
+    if (!apiKey && !preset.baseUrl.includes("localhost")) {
+      store.toast("Add an API key for this endpoint in Settings first.", "error");
+      store.setView("settings");
+      return;
+    }
+
+    const calibration = store.calibrationFor(preset.model, lang);
+    const speakers = chapterSpeakers(chapter);
+    const system =
+      buildSystemPrompt(store.settings.systemPrompt, lang, speakers) + fileNoteBlock(source.note ?? "");
+    const maxInputTokens = store.settings.chunkInputTokens || preset.limits.maxInputTokens;
+    const chunks = chunksFor(chapter, {
+      maxInputTokens,
+      maxOutputTokens: preset.limits.maxOutputTokens,
+      charsPerToken: calibration.charsPerToken,
+      outputRatio: calibration.outputRatio,
+      systemPrompt: system,
+    });
+
+    const id = jobId(source.file, chapter.name, lang);
+    if (opts?.redo) await db.deleteJob(id);
+    const previous = await db.getJob(id);
+    const done = await db.getUnits(id);
+    const job = reconcileJob(id, source, chapter.name, lang, preset.id, preset.model, chunks, previous, done);
+    await db.putJob(job);
+
+    const unitsTotal = chapter.nodes.filter(isTranslatable).length;
+    const already = job.chunks.filter((c) => c.status === "done").length;
+    abort.current = new AbortController();
+    setState({
+      jobId: id,
+      chapter: chapter.name,
+      lang,
+      chunksDone: already,
+      chunksTotal: chunks.length,
+      unitsDone: done.size,
+      unitsTotal,
+      usage: { ...job.usage },
+      waiting: null,
+      log: [],
+      calls: [],
+      finished: false,
+    });
+    if (already) log(`Resuming: ${already} of ${chunks.length} chunks already translated.`);
+
+    const limiter = new RateLimiter(
+      preset.limits,
+      preset.quotaResetTz,
+      store.settings.limiter[preset.id] ?? emptyState(),
+      (s) => void store.saveSettings({ limiter: { ...store.settings.limiter, [preset.id]: s } }),
+    );
+
+    try {
+      const finished = await runJob(
+        job,
+        chunks,
+        lang,
+        {
+          limiter,
+          apiKey,
+          baseUrl: preset.baseUrl,
+          model: preset.model,
+          maxOutputTokens: preset.limits.maxOutputTokens,
+          reasoningEffort: preset.reasoningEffort,
+          systemPromptTemplate: store.settings.systemPrompt,
+          fileNote: source.note,
+          speakers,
+          labels: makeLabelMap(
+            chapter.nodes.flatMap((n) =>
+              n.kind === "label" ? [n.id] : n.kind === "jump" ? [n.to] : [],
+            ),
+          ),
+          calibration,
+          saveUnits: async (chunk, translations) => {
+            await db.putUnits(id, translations);
+            setState((s) =>
+              s ? { ...s, unitsDone: s.unitsDone + translations.size } : s,
+            );
+            void chunk;
+          },
+          saveJob: async (j) => {
+            await db.putJob(j);
+          },
+          onCalibration: (c) => {
+            void store.saveSettings({
+              calibration: { ...store.settings.calibration, [`${preset.model}:${lang}`]: c },
+            });
+          },
+          onEvent: (e) => onEvent(e, setState),
+        },
+        abort.current.signal,
+      );
+
+      await store.refreshJobs();
+      const translations = await db.getUnits(id);
+      await store.saveArtifact(
+        buildArtifact({
+          book: source.file,
+          srcHash: source.srcHash,
+          chapter,
+          lang,
+          model: preset.model,
+          translations,
+          generatedAt: Date.now(),
+        }),
+      );
+
+      setState((s) => (s ? { ...s, finished: true } : s));
+      if (isComplete(finished)) {
+        store.toast(`${chapter.name} finished — saved to the library.`);
+      } else {
+        store.toast(`${chapter.name} stopped with chunks left. Progress is saved; press Continue.`, "error");
+      }
+    } catch (e) {
+      const message = abort.current?.signal.aborted ? "Stopped. Progress is saved." : (e as Error).message;
+      setState((s) => (s ? { ...s, finished: true, error: message } : s));
+      await store.refreshJobs();
+    }
+  }
 
   const stop = useCallback(() => {
     abort.current?.abort(new Error("stopped by user"));
