@@ -776,9 +776,24 @@ def process_lang(value):
   return map[value]
 
 
+def find_asset_key(obj, suffix):
+  """Locate a top-level asset key by its trailing path segment.
+
+  Different game builds prefix these paths differently (e.g.
+  `Assets/Adv/Scenarios/common/localize/Localize.xls:Localize` vs.
+  `Assets/Scene_Adv/Settings/common/Localize.xls:Localize`), so match on the
+  suffix that's actually stable across builds instead of a hardcoded prefix.
+  """
+  matches = [key for key in obj if key.endswith(suffix)]
+  if not matches:
+    raise KeyError(f"No key ending with {suffix!r} found in common.chapter json")
+  if len(matches) > 1:
+    raise KeyError(f"Multiple keys ending with {suffix!r} found: {matches}")
+  return obj[matches[0]]
+
 def make_map(obj, lang):
   map = {}
-  obj = obj["Assets/Adv/Scenarios/common/localize/Localize.xls:Localize"]
+  obj = find_asset_key(obj, "Localize.xls:Localize")
   k = lang["name"]
 
   for x in obj:
@@ -791,7 +806,7 @@ def make_map(obj, lang):
 
 def make_map2(obj):
   map = {}
-  obj = obj["Assets/Adv/Scenarios/common/Character.xls:Character"]
+  obj = find_asset_key(obj, "Character.xls:Character")
 
   for x in obj:
     if "CharacterName" in x and "NameText" in x:
