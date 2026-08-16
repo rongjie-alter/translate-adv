@@ -2,7 +2,7 @@
  * Everything translated so far: export it, share it, merge other people's, and
  * combine it into one readable bilingual file.
  */
-import { useMemo } from "preact/hooks";
+import { useMemo, useRef, useState } from "preact/hooks";
 import { combineBilingual, combinedFileName } from "../combine/bilingual";
 import { LANG_LABEL, type Lang } from "../scenario/model";
 import {
@@ -22,6 +22,9 @@ interface Group {
 
 export function LibraryView() {
   const store = useStore();
+  const folderIntroRef = useRef<HTMLDialogElement>(null);
+  const freeRef = useRef<HTMLDialogElement>(null);
+  const [freeTarget, setFreeTarget] = useState<Group | null>(null);
 
   const groups = useMemo<Group[]>(() => {
     const map = new Map<string, Group>();
@@ -44,16 +47,88 @@ export function LibraryView() {
           store.folderName ? (
             <>
               <span class="folder">Folder: {store.folderName}</span>
+              <button onClick={() => void store.refreshFolderFiles()}>Refresh</button>
               <button onClick={() => void store.syncFolder()}>Import from folder</button>
               <button onClick={() => void store.disconnectFolder()}>Disconnect</button>
             </>
           ) : (
-            <button onClick={() => void store.connectFolder()}>Use a folder…</button>
+            <button onClick={() => folderIntroRef.current?.showModal()}>Connect a local folder…</button>
           )
         ) : (
           <span class="hint">Folder access needs Chrome or Edge; export/import works everywhere.</span>
         )}
       </div>
+
+      {store.folderName ? (
+        store.folderFiles.length ? (
+          <ul class="folder-files">
+            {store.folderFiles.map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
+        ) : (
+          <p class="hint">Click Refresh to list files in this folder.</p>
+        )
+      ) : null}
+
+      <dialog class="folder-intro" ref={folderIntroRef}>
+        <strong>Connect a local folder</strong>
+        <p>
+          Finished chapters are written there automatically as <code>.tl.json</code>, so a group
+          sharing a synced folder gets everyone's translations merged for free instead of mailing
+          files around.
+        </p>
+        <p class="hint">
+          The app writes into this folder on its own — pick one that's empty or dedicated to this
+          app, not a folder with other important documents.
+        </p>
+        <div class="row">
+          <button onClick={() => folderIntroRef.current?.close()}>Cancel</button>
+          <button
+            onClick={() => {
+              folderIntroRef.current?.close();
+              void store.connectFolder();
+            }}
+          >
+            Continue
+          </button>
+        </div>
+      </dialog>
+
+      <dialog class="folder-intro" ref={freeRef}>
+        <strong>Free from browser database</strong>
+        {freeTarget ? (
+          <>
+            <p>
+              {store.folderName ? (
+                <>
+                  Make sure <strong>{freeTarget.book}</strong> ({LANG_LABEL[freeTarget.lang]}) has
+                  been written to '{store.folderName}' (or exported) before freeing it — this
+                  cannot be undone.
+                </>
+              ) : (
+                <>
+                  No folder is connected. Export <strong>{freeTarget.book}</strong> (
+                  {LANG_LABEL[freeTarget.lang]}) first, or its translation will be permanently
+                  lost.
+                </>
+              )}
+            </p>
+            <div class="row">
+              <button onClick={() => freeRef.current?.close()}>Cancel</button>
+              <button
+                class="danger"
+                onClick={() => {
+                  freeRef.current?.close();
+                  void store.freeBook(freeTarget.book, freeTarget.lang);
+                }}
+              >
+                Free anyway
+              </button>
+            </div>
+          </>
+        ) : null}
+      </dialog>
 
       {!groups.length ? (
         <p class="empty">
@@ -65,6 +140,7 @@ export function LibraryView() {
       {groups.map((g) => {
         const order = orderFor(g.book);
         const missing = order.filter((c) => !g.artifacts.some((a) => a.chapter === c));
+        const isDone = missing.length === 0 && g.artifacts.every((a) => !a.incomplete?.length);
         return (
           <div class="group" key={`${g.book}::${g.lang}`}>
             <h3>
@@ -125,6 +201,17 @@ export function LibraryView() {
               >
                 Export all as one file
               </button>
+              {isDone ? (
+                <button
+                  class="danger"
+                  onClick={() => {
+                    setFreeTarget(g);
+                    freeRef.current?.showModal();
+                  }}
+                >
+                  Free from browser database
+                </button>
+              ) : null}
             </div>
           </div>
         );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readArtifactsFrom, writeArtifactTo, writeFileIn, type DirectoryHandle } from "./fsa";
+import { listFilesIn, readArtifactsFrom, writeArtifactTo, writeFileIn, type DirectoryHandle } from "./fsa";
 import { artifactFileName, type Artifact } from "./exchange";
 
 /** In-memory stand-in for a picked folder. */
@@ -87,6 +87,29 @@ describe("folder sync", () => {
     await writeArtifactTo(dir, { ...artifact, generatedAt: 2000, model: "newer" });
     expect(files.size).toBe(1);
     expect((await readArtifactsFrom(dir))[0].model).toBe("newer");
+  });
+
+  it("lists file names without reading any content", async () => {
+    const { dir, files } = fakeFolder({ "notes.txt": "hello", "b.tl.json": "{}" });
+    let read = false;
+    const spied: DirectoryHandle = {
+      ...dir,
+      values: async function* () {
+        for (const name of [...files.keys()]) {
+          yield {
+            kind: "file" as const,
+            name,
+            getFile: async () => {
+              read = true;
+              throw new Error("should not be called");
+            },
+            createWritable: async () => ({ write: async () => {}, close: async () => {} }),
+          };
+        }
+      },
+    };
+    expect(await listFilesIn(spied)).toEqual(["b.tl.json", "notes.txt"]);
+    expect(read).toBe(false);
   });
 
   it("writes the combined file alongside the artifacts", async () => {

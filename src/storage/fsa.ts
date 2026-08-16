@@ -98,6 +98,24 @@ export async function readArtifacts(): Promise<Artifact[]> {
   return readArtifactsFrom(await requireFolder());
 }
 
+/**
+ * Names of every file in the folder, without reading any content.
+ *
+ * A cheap listing so the UI can show what's there before committing to the
+ * heavier `readArtifacts` parse-and-merge.
+ */
+export async function listFiles(): Promise<string[]> {
+  return listFilesIn(await requireFolder());
+}
+
+export async function listFilesIn(dir: DirectoryHandle): Promise<string[]> {
+  const names: string[] = [];
+  for await (const entry of dir.values()) {
+    if (entry.kind === "file") names.push(entry.name);
+  }
+  return names.sort();
+}
+
 // The operations below take the handle explicitly: the handle-resolution path above
 // needs a real browser picker, but the folder logic itself should be testable.
 

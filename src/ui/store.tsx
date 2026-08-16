@@ -43,6 +43,8 @@ export interface Store {
   view: View;
   activeSourceId: string | null;
   folderName: string | null;
+  /** Names only, from the last `refreshFolderFiles()` — nothing is read or parsed. */
+  folderFiles: string[];
   toasts: Toast[];
   conflicts: MergeConflict[];
   /** Filenames just uploaded that lack the consolidated `#chara-meta` JSON dict. */
@@ -72,6 +74,9 @@ export interface Store {
   connectFolder(): Promise<void>;
   disconnectFolder(): Promise<void>;
   syncFolder(): Promise<void>;
+  refreshFolderFiles(): Promise<void>;
+  /** Deletes jobs, units, and artifacts for one book+language. Leaves the scanned source alone. */
+  freeBook(book: string, lang: Lang): Promise<void>;
   toast(message: string, kind?: Toast["kind"]): void;
   dismissConflicts(): void;
   dismissMetaWarning(): void;
@@ -99,6 +104,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
   const [view, setView] = useState<View>("scan");
   const [activeSourceId, setActiveSource] = useState<string | null>(null);
   const [folderName, setFolderName] = useState<string | null>(null);
+  const [folderFiles, setFolderFiles] = useState<string[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [conflicts, setConflicts] = useState<MergeConflict[]>([]);
   const [metaWarningFiles, setMetaWarningFiles] = useState<string[]>([]);
@@ -232,18 +238,41 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     setArtifacts((prev) => prev.filter((a) => artifactKey(a) !== key));
   }, []);
 
+  const freeBook = useCallback(
+    async (book: string, lang: Lang) => {
+      const doomedJobs = jobs.filter((j) => j.bookFile === book && j.lang === lang);
+      for (const j of doomedJobs) await db.deleteJob(j.id);
+      const doomedArtifacts = artifacts.filter((a) => a.book === book && a.lang === lang);
+      for (const a of doomedArtifacts) await db.deleteArtifact(artifactKey(a));
+      setJobs((prev) => prev.filter((j) => !(j.bookFile === book && j.lang === lang)));
+      setArtifacts((prev) => prev.filter((a) => !(a.book === book && a.lang === lang)));
+      toast(`Freed ${book} (${lang}) from the browser database.`);
+    },
+    [jobs, artifacts, toast],
+  );
+
+  const refreshFolderFiles = useCallback(async () => {
+    try {
+      setFolderFiles(await fsa.listFiles());
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
+  }, [toast]);
+
   const connectFolder = useCallback(async () => {
     try {
       setFolderName(await fsa.pickFolder());
       toast("Folder connected — finished chapters will be written there automatically.");
+      await refreshFolderFiles();
     } catch (e) {
       if ((e as Error).name !== "AbortError") toast((e as Error).message, "error");
     }
-  }, [toast]);
+  }, [toast, refreshFolderFiles]);
 
   const disconnectFolder = useCallback(async () => {
     await fsa.forgetFolder();
     setFolderName(null);
+    setFolderFiles([]);
   }, []);
 
   const syncFolder = useCallback(async () => {
@@ -270,6 +299,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     view,
     activeSourceId,
     folderName,
+    folderFiles,
     toasts,
     conflicts,
     metaWarningFiles,
@@ -288,6 +318,8 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     connectFolder,
     disconnectFolder,
     syncFolder,
+    refreshFolderFiles,
+    freeBook,
     toast,
     dismissConflicts: () => setConflicts([]),
     dismissMetaWarning: () => setMetaWarningFiles([]),

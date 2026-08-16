@@ -94,5 +94,5 @@ collected files onto the app and hit **Combine**. Duplicates resolve to the more
 translation, and translations made from a different version of the book are flagged rather
 than silently merged.
 
-On Chrome or Edge you can instead point the app at a shared folder (**Library → Use a folder**).
+On Chrome or Edge you can instead point the app at a shared folder (**Library → Connect a local folder**).
 Finished chapters are written there automatically and picked up on the next scan.
