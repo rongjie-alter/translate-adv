@@ -56,7 +56,7 @@ export const PRESETS: Preset[] = [
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     model: "gemini-3.6-flash",
     limits: { rpm: 5, rpd: 20, tpm: 250_000, maxInputTokens: 32_000, maxOutputTokens: 8_192 },
-    charsPerToken: 1.0,
+    charsPerToken: 1.26,
     quotaResetTz: "America/Los_Angeles",
     keyUrl: "https://aistudio.google.com/api-keys",
     // `-latest` can float onto a Gemini 3 thinking model; capping effort keeps
@@ -70,7 +70,7 @@ export const PRESETS: Preset[] = [
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     model: "gemini-flash-lite-latest",
     limits: { rpm: 15, rpd: 500, tpm: 250_000, maxInputTokens: 32_000, maxOutputTokens: 8_192 },
-    charsPerToken: 1.0,
+    charsPerToken: 1.22,
     quotaResetTz: "America/Los_Angeles",
     keyUrl: "https://aistudio.google.com/api-keys",
     builtin: true,
