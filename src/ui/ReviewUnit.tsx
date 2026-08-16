@@ -8,6 +8,7 @@
  * keystroke in the find box is the one thing that would actually be slow.
  */
 import { memo } from "preact/compat";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { ArtifactMarker } from "../storage/exchange";
 
 export interface Row {
@@ -18,6 +19,8 @@ export interface Row {
   /** Precomputed display HTML. */
   srcHtml: string;
   tlHtml: string;
+  /** Raw compact-format text (what the textarea edits), not the rendered HTML above. */
+  tl: string;
   charaTl: string;
   charaJp: string;
   to?: string;
@@ -35,19 +38,43 @@ export const ReviewUnit = memo(function ReviewUnit({
   selected,
   focused,
   changed,
+  editing,
   onToggle,
+  onEdit,
+  onSave,
+  onCancelEdit,
+  onRevert,
 }: {
   row: Row;
   selected: boolean;
   focused: boolean;
   changed: boolean;
+  /** Whether this row's translation is currently the one open for manual edit. */
+  editing: boolean;
   onToggle: (index: number, shift: boolean) => void;
+  onEdit: (id: string) => void;
+  onSave: (id: string, text: string) => void;
+  onCancelEdit: () => void;
+  onRevert: (id: string) => void;
 }) {
   const classes = ["rv-unit", row.kind];
   if (selected) classes.push("sel");
   if (focused) classes.push("focus");
   if (changed) classes.push("changed");
   if (!row.translated) classes.push("gap");
+  if (editing) classes.push("editing");
+
+  const [draft, setDraft] = useState(row.tl);
+  const areaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Re-seed the draft and focus the textarea whenever this row becomes the one being edited.
+  useEffect(() => {
+    if (!editing) return;
+    setDraft(row.tl);
+    areaRef.current?.focus();
+  }, [editing]);
+
+  const save = () => onSave(row.id, draft);
 
   return (
     <div
@@ -55,7 +82,9 @@ export const ReviewUnit = memo(function ReviewUnit({
       role="option"
       aria-selected={selected}
       style={{ "--depth": row.depth }}
-      onClick={(e) => onToggle(row.index, e.shiftKey)}
+      onClick={(e) => {
+        if (!editing) onToggle(row.index, e.shiftKey);
+      }}
     >
       {/* Decorative: the row owns the click, so a live checkbox would toggle twice. */}
       <input type="checkbox" checked={selected} readOnly tabIndex={-1} />
@@ -63,12 +92,61 @@ export const ReviewUnit = memo(function ReviewUnit({
         <div class="rv-tl">
           {row.charaTl ? <span class="rv-chara">{row.charaTl}</span> : null}
           {row.kind === "select" ? <span class="rv-opt">▸</span> : null}
-          {row.translated ? (
+          {editing ? (
+            <div class="rv-edit" onClick={(e) => e.stopPropagation()}>
+              <textarea
+                ref={areaRef}
+                value={draft}
+                onInput={(e) => setDraft((e.target as HTMLTextAreaElement).value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    onCancelEdit();
+                  } else if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                    e.preventDefault();
+                    save();
+                  }
+                }}
+              />
+              <div class="rv-edit-actions">
+                <button class="link" onClick={save}>
+                  Save
+                </button>
+                <button class="link" onClick={onCancelEdit}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : row.translated ? (
             <span dangerouslySetInnerHTML={{ __html: row.tlHtml }} />
           ) : (
             <span class="rv-none">[not translated]</span>
           )}
           {row.to ? <span class="rv-to">→ {row.to}</span> : null}
+          {!editing ? (
+            <button
+              class="rv-edit-btn"
+              title="Edit this line"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(row.id);
+              }}
+            >
+              ✎
+            </button>
+          ) : null}
+          {!editing && changed ? (
+            <button
+              class="rv-revert-btn"
+              title="Revert to the previous translation"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRevert(row.id);
+              }}
+            >
+              ↺
+            </button>
+          ) : null}
         </div>
         <div class="rv-jp">
           {row.charaJp ? <span class="rv-chara">{row.charaJp}</span> : null}

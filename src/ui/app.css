@@ -215,12 +215,37 @@ progress { width: 100%; height: 0.6rem; }
 .rv-unit.changed { border-left-color: var(--ok); background: #f0fbf4; }
 .rv-unit input { margin-top: 0.2rem; }
 
-.rv-tl { line-height: 1.45; }
+.rv-tl { line-height: 1.45; position: relative; }
 .rv-jp { color: var(--muted); font-size: 0.9em; margin-top: 0.2rem; }
 .rv-chara { font-weight: 700; margin-right: 0.4rem; }
 .rv-opt { color: var(--accent); margin-right: 0.3rem; }
 .rv-to { float: right; font-size: 0.85em; color: var(--accent); }
 .rv-none { color: var(--err); font-style: italic; }
+
+.rv-edit-btn, .rv-revert-btn {
+  border: none;
+  background: none;
+  padding: 0 0.3rem;
+  margin-left: 0.35rem;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+}
+.rv-unit:hover .rv-edit-btn, .rv-unit:hover .rv-revert-btn { opacity: 1; }
+.rv-edit-btn:hover, .rv-revert-btn:hover { color: var(--accent); }
+.rv-unit.editing .rv-edit-btn { display: none; }
+
+.rv-edit { display: flex; flex-direction: column; gap: 0.3rem; }
+.rv-edit textarea {
+  width: 100%;
+  min-height: 3.5rem;
+  font: inherit;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  resize: vertical;
+}
+.rv-edit-actions { display: flex; gap: 0.6rem; }
 
 .rv-marker {
   font-size: 0.82rem;

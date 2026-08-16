@@ -7,11 +7,12 @@
  * act on it except redoing the whole chapter.
  */
 import { Fragment } from "preact";
-import { useCallback, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { renderCompact } from "../scenario/inline";
 import { LANG_LABEL, type Lang } from "../scenario/model";
 import { speakerName } from "../scenario/serialize";
-import { artifactKey, type Artifact, type ArtifactMarker } from "../storage/exchange";
+import * as db from "../storage/db";
+import { applyTranslations, artifactKey, type Artifact, type ArtifactMarker } from "../storage/exchange";
 import { ReviewMarker, ReviewUnit, type Row } from "./ReviewUnit";
 import { useStore } from "./store";
 import type { Proposal, useRetranslate } from "./useRetranslate";
@@ -32,6 +33,15 @@ export function ReviewView({
   const [presetId, setPresetId] = useState(store.settings.presetId);
   const [hint, setHint] = useState("");
   const anchor = useRef<number | null>(null);
+
+  // Which line's translation is open for manual edit, and which lines were touched
+  // (manually or via an accepted retranslate) this session — both reset on a chapter switch.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editedIds, setEditedIds] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    setEditingId(null);
+    setEditedIds(new Set());
+  }, [store.reviewKey]);
 
   // Always re-derived by key: a Library delete or a folder-sync merge can pull the
   // artifact out from under this screen mid-session.
@@ -88,6 +98,38 @@ export function ReviewView({
   const selectUntranslated = useCallback(() => {
     setSelection(new Set(rows.filter((r) => !r.translated).map((r) => r.id)));
   }, [rows, setSelection]);
+
+  const startEdit = useCallback((id: string) => setEditingId(id), []);
+  const cancelEdit = useCallback(() => setEditingId(null), []);
+
+  /** Write one manually-typed line through the same path an accepted retranslation uses. */
+  const saveEdit = useCallback(
+    async (uid: string, text: string) => {
+      if (!artifact) return;
+      const key = artifactKey(artifact);
+      const texts = new Map([[uid, text]]);
+      const meta = { model: "manual", at: Date.now() };
+      await db.putUnits(key, texts, { keepPrevious: true, ...meta });
+      await store.saveArtifact(applyTranslations(artifact, texts, meta));
+      setEditedIds((prev) => new Set(prev).add(uid));
+      setEditingId(null);
+    },
+    [artifact, store],
+  );
+
+  /** Put back what the line held before its last edit or accepted retranslation. */
+  const revertLine = useCallback(
+    async (uid: string) => {
+      if (!artifact) return;
+      await retry.revert(artifact, [uid]);
+      setEditedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(uid);
+        return next;
+      });
+    },
+    [artifact, retry],
+  );
 
   const selectLabel = useCallback(
     (id: string) => {
@@ -191,8 +233,13 @@ export function ReviewView({
                   row={row}
                   selected={selection.has(row.id)}
                   focused={false}
-                  changed={false}
+                  changed={editedIds.has(row.id)}
+                  editing={editingId === row.id}
                   onToggle={toggle}
+                  onEdit={startEdit}
+                  onSave={saveEdit}
+                  onCancelEdit={cancelEdit}
+                  onRevert={revertLine}
                 />
               </Fragment>
             ))}
@@ -209,6 +256,7 @@ export function ReviewView({
             hint={hint}
             onHint={setHint}
             estimate={estimate}
+            onApplied={(ids) => setEditedIds((prev) => new Set([...prev, ...ids]))}
           />
         </>
       )}
@@ -226,6 +274,7 @@ function ReviewBar({
   hint,
   onHint,
   estimate,
+  onApplied,
 }: {
   artifact: Artifact;
   retry: ReturnType<typeof useRetranslate>;
@@ -236,6 +285,7 @@ function ReviewBar({
   hint: string;
   onHint: (s: string) => void;
   estimate: ReturnType<ReturnType<typeof useRetranslate>["estimate"]>;
+  onApplied: (uids: string[]) => void;
 }) {
   const store = useStore();
   const s = retry.state;
@@ -272,7 +322,10 @@ function ReviewBar({
           <button onClick={retry.clear}>Discard all</button>
           <button
             disabled={!kept.length}
-            onClick={() => void retry.apply(artifact, kept)}
+            onClick={() => {
+              const ids = kept.map((p) => p.uid);
+              void retry.apply(artifact, kept).then(() => onApplied(ids));
+            }}
           >
             Apply {kept.length} kept
           </button>
@@ -435,6 +488,7 @@ function buildRows(a: Artifact): Row[] {
       kind: u.kind,
       srcHtml: renderCompact(u.src, { sizes: u.sizes }),
       tlHtml: renderCompact(u.tl, { ruby: false, sizes: u.sizes }),
+      tl: u.tl,
       charaTl: chara,
       charaJp: u.speaker?.jp ?? "",
       ...(u.kind === "select" && u.to ? { to: u.to } : {}),
