@@ -25,6 +25,8 @@ import { hashFile, type Book, type Lang } from "../scenario/model";
 import { parseBookHtml } from "../scenario/parseHtml";
 import type { Job } from "../orchestrator/job";
 
+import type { BookGroup } from "../storage/groups";
+
 export type View = "scan" | "translate" | "review" | "library" | "settings";
 
 export interface Toast {
@@ -76,6 +78,7 @@ export interface Store {
   disconnectFolder(): Promise<void>;
   syncFolder(): Promise<void>;
   refreshFolderFiles(): Promise<void>;
+  loadFolderGroup(group: Pick<BookGroup, "book" | "lang" | "artifactFiles" | "sourceFile">): Promise<void>;
   /** Deletes jobs, units, and artifacts for one book+language. Leaves the scanned source alone. */
   freeBook(book: string, lang: Lang): Promise<void>;
   toast(message: string, kind?: Toast["kind"]): void;
@@ -300,6 +303,55 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     }
   }, [toast]);
 
+  const loadFolderGroup = useCallback(
+    async (group: Pick<BookGroup, "book" | "lang" | "artifactFiles" | "sourceFile">) => {
+      try {
+        let loadedSources = 0;
+        let loadedArtifacts = 0;
+
+        if (group.sourceFile && !sources.some((s) => s.file === group.sourceFile)) {
+          const html = await fsa.readFile(group.sourceFile);
+          const book = parseBookHtml(group.sourceFile, html);
+          if (book.chapters.length) {
+            const rec: SourceRecord = {
+              id: `${group.sourceFile}:${hashFile(html)}`,
+              file: group.sourceFile,
+              srcHash: book.srcHash,
+              html,
+              addedAt: Date.now(),
+            };
+            await db.putSource(rec);
+            setSources((prev) => [...prev.filter((p) => p.id !== rec.id), rec]);
+            setBooks((prev) => new Map(prev).set(rec.id, book));
+            setActiveSource((cur) => cur ?? rec.id);
+            loadedSources++;
+          }
+        }
+
+        if (group.artifactFiles.length) {
+          const found = await fsa.readArtifactsByNames(group.artifactFiles);
+          if (found.length) {
+            const existing = await db.listArtifacts();
+            const { artifacts: merged, conflicts: found2 } = mergeArtifacts([...existing, ...found]);
+            for (const a of merged) await db.putArtifact(a);
+            setArtifacts(merged);
+            setConflicts((prev) => [...prev, ...found2]);
+            loadedArtifacts = found.length;
+          }
+        }
+
+        toast(
+          `Loaded ${group.book} (${group.lang}): ` +
+            `${loadedArtifacts} translation file(s)` +
+            (loadedSources ? `, 1 source file` : ``),
+        );
+      } catch (e) {
+        toast(`Failed to load ${group.book}: ${(e as Error).message}`, "error");
+      }
+    },
+    [sources, toast],
+  );
+
   const store: Store = {
     ready,
     settings,
@@ -331,6 +383,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     disconnectFolder,
     syncFolder,
     refreshFolderFiles,
+    loadFolderGroup,
     freeBook,
     toast,
     dismissConflicts: () => setConflicts([]),

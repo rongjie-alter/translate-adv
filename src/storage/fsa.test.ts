@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { listFilesIn, readArtifactsFrom, writeArtifactTo, writeFileIn, type DirectoryHandle } from "./fsa";
+import {
+  listFilesIn,
+  readArtifactsByNamesFrom,
+  readArtifactsFrom,
+  writeArtifactTo,
+  writeFileIn,
+  type DirectoryHandle,
+} from "./fsa";
 import { artifactFileName, type Artifact } from "./exchange";
 
 /** In-memory stand-in for a picked folder. */
@@ -120,4 +127,16 @@ describe("folder sync", () => {
     // The combined file must not be picked up as an artifact on the next scan.
     expect(await readArtifactsFrom(dir)).toHaveLength(1);
   });
+
+  it("reads specific artifacts by names", async () => {
+    const { dir } = fakeFolder();
+    await writeArtifactTo(dir, artifact);
+    await writeArtifactTo(dir, { ...artifact, chapter: "tourou2026_1", generatedAt: 1001 });
+    const name0 = artifactFileName(artifact);
+    const name1 = artifactFileName({ ...artifact, chapter: "tourou2026_1" });
+    const back = await readArtifactsByNamesFrom(dir, [name0]);
+    expect(back).toHaveLength(1);
+    expect(back[0].chapter).toBe("tourou2026_0");
+  });
 });
+

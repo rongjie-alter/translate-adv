@@ -12,31 +12,18 @@ import {
   type Artifact,
 } from "../storage/exchange";
 import * as fsa from "../storage/fsa";
+import { scanBookGroups, normalizeBookBase, type BookGroup } from "../storage/groups";
 import { useStore } from "./store";
-
-interface Group {
-  book: string;
-  lang: Lang;
-  artifacts: Artifact[];
-}
 
 export function LibraryView() {
   const store = useStore();
   const folderIntroRef = useRef<HTMLDialogElement>(null);
   const freeRef = useRef<HTMLDialogElement>(null);
-  const [freeTarget, setFreeTarget] = useState<Group | null>(null);
+  const [freeTarget, setFreeTarget] = useState<BookGroup | null>(null);
 
-  const groups = useMemo<Group[]>(() => {
-    const map = new Map<string, Group>();
-    for (const a of store.artifacts) {
-      const key = `${a.book}::${a.lang}`;
-      const g = map.get(key) ?? { book: a.book, lang: a.lang, artifacts: [] };
-      g.artifacts.push(a);
-      map.set(key, g);
-    }
-    for (const g of map.values()) g.artifacts.sort((x, y) => x.chapter.localeCompare(y.chapter));
-    return [...map.values()];
-  }, [store.artifacts]);
+  const groups = useMemo<BookGroup[]>(() => {
+    return scanBookGroups(store.folderFiles, store.artifacts, store.sources);
+  }, [store.folderFiles, store.artifacts, store.sources]);
 
   return (
     <section class="library">
@@ -58,18 +45,6 @@ export function LibraryView() {
           <span class="hint">Folder access needs Chrome or Edge; export/import works everywhere.</span>
         )}
       </div>
-
-      {store.folderName ? (
-        store.folderFiles.length ? (
-          <ul class="folder-files">
-            {store.folderFiles.map((f) => (
-              <li key={f}>{f}</li>
-            ))}
-          </ul>
-        ) : (
-          <p class="hint">Click Refresh to list files in this folder.</p>
-        )
-      ) : null}
 
       <dialog class="folder-intro" ref={folderIntroRef}>
         <strong>Connect a local folder</strong>
@@ -102,14 +77,14 @@ export function LibraryView() {
             <p>
               {store.folderName ? (
                 <>
-                  Make sure <strong>{freeTarget.book}</strong> ({LANG_LABEL[freeTarget.lang]}) has
+                  Make sure <strong>{freeTarget.book}</strong> ({LANG_LABEL[freeTarget.lang] ?? freeTarget.lang}) has
                   been written to '{store.folderName}' (or exported) before freeing it — this
                   cannot be undone.
                 </>
               ) : (
                 <>
                   No folder is connected. Export <strong>{freeTarget.book}</strong> (
-                  {LANG_LABEL[freeTarget.lang]}) first, or its translation will be permanently
+                  {LANG_LABEL[freeTarget.lang] ?? freeTarget.lang}) first, or its translation will be permanently
                   lost.
                 </>
               )}
@@ -138,13 +113,32 @@ export function LibraryView() {
       ) : null}
 
       {groups.map((g) => {
+        if (!g.inDb) {
+          return (
+            <div class="group" key={`${g.book}::${g.lang}`}>
+              <h3>
+                {g.book} — {LANG_LABEL[g.lang] ?? g.lang}
+              </h3>
+              <p class="hint">
+                Found in folder ({g.folderFiles.length} file{g.folderFiles.length === 1 ? "" : "s"}):{" "}
+                {g.folderFiles.join(", ")}
+              </p>
+              <div class="row">
+                <button onClick={() => void store.loadFolderGroup(g)}>
+                  Load into browser database
+                </button>
+              </div>
+            </div>
+          );
+        }
+
         const order = orderFor(g.book);
         const missing = order.filter((c) => !g.artifacts.some((a) => a.chapter === c));
         const isDone = missing.length === 0 && g.artifacts.every((a) => !a.incomplete?.length);
         return (
           <div class="group" key={`${g.book}::${g.lang}`}>
             <h3>
-              {g.book} — {LANG_LABEL[g.lang]}
+              {g.book} — {LANG_LABEL[g.lang] ?? g.lang}
             </h3>
             <table>
               <thead>
@@ -220,15 +214,17 @@ export function LibraryView() {
   );
 
   function orderFor(bookFile: string): string[] {
+    const base = normalizeBookBase(bookFile);
     for (const src of store.sources) {
-      if (src.file !== bookFile) continue;
-      const book = store.books.get(src.id);
-      if (book) return book.chapters.map((c) => c.name);
+      if (src.file === bookFile || normalizeBookBase(src.file) === base) {
+        const book = store.books.get(src.id);
+        if (book) return book.chapters.map((c) => c.name);
+      }
     }
     return [];
   }
 
-  async function combine(g: Group, toFolder: boolean) {
+  async function combine(g: BookGroup, toFolder: boolean) {
     const order = orderFor(g.book);
     const html = combineBilingual({
       book: g.book,

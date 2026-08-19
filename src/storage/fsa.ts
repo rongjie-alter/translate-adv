@@ -98,6 +98,14 @@ export async function readArtifacts(): Promise<Artifact[]> {
   return readArtifactsFrom(await requireFolder());
 }
 
+export async function readFile(name: string): Promise<string> {
+  return readFileIn(await requireFolder(), name);
+}
+
+export async function readArtifactsByNames(names: string[]): Promise<Artifact[]> {
+  return readArtifactsByNamesFrom(await requireFolder(), names);
+}
+
 /**
  * Names of every file in the folder, without reading any content.
  *
@@ -134,6 +142,42 @@ export async function writeFileIn(
   await stream.close();
 }
 
+export async function readFileIn(dir: DirectoryHandle, name: string): Promise<string> {
+  const handle = await dir.getFileHandle(name);
+  const file = await handle.getFile();
+  return file.text();
+}
+
+/**
+ * Read specific artifact files by names.
+ */
+export async function readArtifactsByNamesFrom(
+  dir: DirectoryHandle,
+  names: string[],
+): Promise<Artifact[]> {
+  const out: Artifact[] = [];
+  const problems: string[] = [];
+  for (const name of names) {
+    try {
+      const text = await readFileIn(dir, name);
+      if (/\.bundle\.json$/i.test(name)) {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            out.push(parseArtifact(JSON.stringify(item), name));
+          }
+          continue;
+        }
+      }
+      out.push(parseArtifact(text, name));
+    } catch (e) {
+      problems.push(`${name}: ${(e as Error).message}`);
+    }
+  }
+  if (problems.length && !out.length) throw new Error(problems.join("; "));
+  return out;
+}
+
 /**
  * Every `.tl.json` in the folder.
  *
@@ -156,3 +200,4 @@ export async function readArtifactsFrom(dir: DirectoryHandle): Promise<Artifact[
   if (problems.length && !out.length) throw new Error(problems.join("; "));
   return out;
 }
+
