@@ -109,7 +109,12 @@ export function LibraryView() {
           Nothing here yet. Translate a chapter, or drop <code>.tl.json</code> files from other
           people onto this page.
         </p>
-      ) : null}
+      ) : (
+        <p class="hint">
+          Exporting <code>.tl.json</code> files allows others to edit/merge translations on this website.
+          Merging to bilingual HTML produces <code>.bilingual.html</code> files for local reading.
+        </p>
+      )}
 
       {groups.map((g) => {
         if (!g.inDb) {
@@ -196,8 +201,9 @@ export function LibraryView() {
                     JSON.stringify(g.artifacts, null, 1),
                   )
                 }
+                title="Export all translated chapters to a bundle file"
               >
-                Export all to .bundle.json
+                Export All
               </button>
               {isDone ? (
                 <button
