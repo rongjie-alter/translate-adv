@@ -73,7 +73,7 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
           { role: "user", content: req.user },
         ],
         temperature: req.temperature ?? 0.3,
-        ...(req.maxOutputTokens ? { max_tokens: req.maxOutputTokens } : {}),
+        //...(req.maxOutputTokens ? { max_tokens: req.maxOutputTokens } : {}),
         // Gemini's OpenAI-compat layer rejects a request carrying both `reasoning_effort`
         // and `extra_body.google.thinking_config` — only send the former off-Gemini.
         ...(req.reasoningEffort && !req.baseUrl.includes(GEMINI_HOST)
