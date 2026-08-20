@@ -14,6 +14,7 @@ import { escapeHtml, renderCompact } from "../scenario/inline";
 import { LANG_LABEL, type Lang } from "../scenario/model";
 import { speakerName } from "../scenario/serialize";
 import type { Artifact, ArtifactMarker, ArtifactUnit } from "../storage/exchange";
+import { normalizeBookBase } from "../storage/groups";
 
 export interface CombineOptions {
   book: string;
@@ -40,10 +41,20 @@ export function combineBilingual(opts: CombineOptions): string {
 }
 
 function orderChapters(opts: CombineOptions): Artifact[] {
-  const mine = opts.artifacts.filter((a) => a.book === opts.book && a.lang === opts.lang);
+  const base = normalizeBookBase(opts.book);
+  const mine = opts.artifacts.filter(
+    (a) => normalizeBookBase(a.book) === base && a.lang === opts.lang,
+  );
   const order = opts.chapterOrder;
   if (!order) return [...mine].sort((a, b) => a.chapter.localeCompare(b.chapter));
-  return [...mine].sort((a, b) => order.indexOf(a.chapter) - order.indexOf(b.chapter));
+  return [...mine].sort((a, b) => {
+    const ai = order.indexOf(a.chapter);
+    const bi = order.indexOf(b.chapter);
+    if (ai === -1 && bi === -1) return a.chapter.localeCompare(b.chapter);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
 }
 
 function toc(chapters: Artifact[], missing: string[], opts: CombineOptions): string {
@@ -190,6 +201,6 @@ document.querySelector("#ruby-btn").onclick = function() {
 
 /** File name for the combined output. */
 export function combinedFileName(book: string, lang: Lang): string {
-  const base = book.replace(/\.book\.html$/i, "").replace(/\.html$/i, "");
+  const base = normalizeBookBase(book);
   return `${base}.${lang}.bilingual.html`;
 }

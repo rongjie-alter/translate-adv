@@ -197,7 +197,7 @@ export function LibraryView() {
               <button
                 onClick={() =>
                   download(
-                    `${g.book.replace(/\.html$/i, "")}.${g.lang}.bundle.json`,
+                    `${normalizeBookBase(g.book)}.${g.lang}.bundle.json`,
                     JSON.stringify(g.artifacts, null, 1),
                   )
                 }

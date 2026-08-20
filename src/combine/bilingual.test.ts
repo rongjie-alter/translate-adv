@@ -108,6 +108,23 @@ describe("combineBilingual", () => {
     expect(partial).toContain("line(s) untranslated");
   });
 
+  it("includes chapters whose artifact book name differs in extension from book option", () => {
+    const a0 = artifactFor(0);
+    const a1 = {
+      ...artifactFor(1),
+      book: "touroumatsuri2026.html",
+    };
+    const out = combineBilingual({
+      book: "touroumatsuri2026.book.html",
+      lang: "en",
+      artifacts: [a0, a1],
+      chapterOrder: book.chapters.map((c) => c.name),
+    });
+    expect(out).toContain('id="tourou2026_0"');
+    expect(out).toContain('id="tourou2026_1-1"');
+    expect(out).not.toContain("Not translated yet: tourou2026_1-1");
+  });
+
   it("names the file by book and language", () => {
     expect(combinedFileName(book.file, "zh-hant")).toBe("touroumatsuri2026.zh-hant.bilingual.html");
   });

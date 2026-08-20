@@ -25,7 +25,7 @@ import { hashFile, type Book, type Lang } from "../scenario/model";
 import { parseBookHtml } from "../scenario/parseHtml";
 import type { Job } from "../orchestrator/job";
 
-import type { BookGroup } from "../storage/groups";
+import { normalizeBookBase, type BookGroup } from "../storage/groups";
 
 export type View = "scan" | "translate" | "review" | "library" | "settings";
 
@@ -165,6 +165,15 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
       for (const file of files) {
         const text = await file.text();
         try {
+          if (/\.bundle\.json$/i.test(file.name)) {
+            const parsed = JSON.parse(text);
+            if (Array.isArray(parsed)) {
+              for (const item of parsed) {
+                importedArtifacts.push(parseArtifact(JSON.stringify(item), file.name));
+              }
+              continue;
+            }
+          }
           if (/\.tl\.json$/i.test(file.name) || /\.json$/i.test(file.name)) {
             importedArtifacts.push(parseArtifact(text, file.name));
             continue;
@@ -254,12 +263,21 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
 
   const freeBook = useCallback(
     async (book: string, lang: Lang) => {
-      const doomedJobs = jobs.filter((j) => j.bookFile === book && j.lang === lang);
+      const base = normalizeBookBase(book);
+      const doomedJobs = jobs.filter(
+        (j) => normalizeBookBase(j.bookFile) === base && j.lang === lang,
+      );
       for (const j of doomedJobs) await db.deleteJob(j.id);
-      const doomedArtifacts = artifacts.filter((a) => a.book === book && a.lang === lang);
+      const doomedArtifacts = artifacts.filter(
+        (a) => normalizeBookBase(a.book) === base && a.lang === lang,
+      );
       for (const a of doomedArtifacts) await db.deleteArtifact(artifactKey(a));
-      setJobs((prev) => prev.filter((j) => !(j.bookFile === book && j.lang === lang)));
-      setArtifacts((prev) => prev.filter((a) => !(a.book === book && a.lang === lang)));
+      setJobs((prev) =>
+        prev.filter((j) => !(normalizeBookBase(j.bookFile) === base && j.lang === lang)),
+      );
+      setArtifacts((prev) =>
+        prev.filter((a) => !(normalizeBookBase(a.book) === base && a.lang === lang)),
+      );
       toast(`Freed ${book} (${lang}) from the browser database.`);
     },
     [jobs, artifacts, toast],

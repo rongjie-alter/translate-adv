@@ -13,6 +13,7 @@ import { LANG_LABEL, type Lang } from "../scenario/model";
 import { speakerName } from "../scenario/serialize";
 import * as db from "../storage/db";
 import { applyTranslations, artifactKey, type Artifact, type ArtifactMarker } from "../storage/exchange";
+import { normalizeBookBase } from "../storage/groups";
 import { ReviewMarker, ReviewUnit, type Row } from "./ReviewUnit";
 import { useStore } from "./store";
 import type { Proposal, useRetranslate } from "./useRetranslate";
@@ -453,7 +454,8 @@ function ProposalRow({ p, onToggle }: { p: Proposal; onToggle: () => void }) {
 export function groupArtifacts(artifacts: Artifact[]) {
   const groups = new Map<string, { book: string; lang: Lang; artifacts: Artifact[] }>();
   for (const a of artifacts) {
-    const key = `${a.book}::${a.lang}`;
+    const base = normalizeBookBase(a.book);
+    const key = `${base}::${a.lang}`;
     const g = groups.get(key);
     if (g) g.artifacts.push(a);
     else groups.set(key, { book: a.book, lang: a.lang, artifacts: [a] });
