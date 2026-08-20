@@ -134,9 +134,10 @@ describe("folder sync", () => {
     await writeArtifactTo(dir, { ...artifact, chapter: "tourou2026_1", generatedAt: 1001 });
     const name0 = artifactFileName(artifact);
     const name1 = artifactFileName({ ...artifact, chapter: "tourou2026_1" });
-    const back = await readArtifactsByNamesFrom(dir, [name0]);
-    expect(back).toHaveLength(1);
+    const back = await readArtifactsByNamesFrom(dir, [name0, name1]);
+    expect(back).toHaveLength(2);
     expect(back[0].chapter).toBe("tourou2026_0");
+    expect(back[1].chapter).toBe("tourou2026_1");
   });
 });
 

@@ -4,12 +4,11 @@
  */
 import { useMemo, useRef, useState } from "preact/hooks";
 import { combineBilingual, combinedFileName } from "../combine/bilingual";
-import { LANG_LABEL, type Lang } from "../scenario/model";
+import { LANG_LABEL } from "../scenario/model";
 import {
   artifactFileName,
   artifactKey,
   serializeArtifact,
-  type Artifact,
 } from "../storage/exchange";
 import * as fsa from "../storage/fsa";
 import { scanBookGroups, normalizeBookBase, type BookGroup } from "../storage/groups";
