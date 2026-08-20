@@ -180,9 +180,14 @@ export function LibraryView() {
             ) : null}
 
             <div class="row">
-              <button onClick={() => void combine(g, false)}>Combine to bilingual HTML</button>
+              <button onClick={() => void combine(g, false)}>Merge to bilingual HTML</button>
               {store.folderName ? (
-                <button onClick={() => void combine(g, true)}>Combine into the folder</button>
+                <button
+                  onClick={() => void combine(g, true)}
+                  title="Merge & write to folder"
+                >
+                  Merge & Write to folder
+                </button>
               ) : null}
               <button
                 onClick={() =>
@@ -192,7 +197,7 @@ export function LibraryView() {
                   )
                 }
               >
-                Export all as one file
+                Export all to .bundle.json
               </button>
               {isDone ? (
                 <button
