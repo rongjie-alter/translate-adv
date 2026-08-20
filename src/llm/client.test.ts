@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { chat } from "./client";
+import { chat, extractError } from "./client";
 
 function fakeResponse(body: unknown, status = 200) {
   return {
@@ -115,5 +115,35 @@ describe("chat", () => {
     expect(res.status).toBe(200);
     expect(res.reasoning).toBeUndefined();
     expect(res.usage.reasoningTokens).toBeUndefined();
+  });
+});
+
+describe("extractError", () => {
+  it("extracts error message from OpenAI-style object", () => {
+    const json = JSON.stringify({ error: { message: "Invalid API key" } });
+    expect(extractError(json)).toBe("Invalid API key");
+  });
+
+  it("extracts error message from Google-style array format", () => {
+    const json = JSON.stringify([
+      {
+        error: {
+          code: 400,
+          message: "Please pass a valid API key",
+          status: "INVALID_ARGUMENT",
+        },
+      },
+    ]);
+    expect(extractError(json)).toBe("Please pass a valid API key");
+  });
+
+  it("extracts error message from top-level message or string error", () => {
+    expect(extractError(JSON.stringify({ message: "Something went wrong" }))).toBe("Something went wrong");
+    expect(extractError(JSON.stringify([{ message: "Array message error" }]))).toBe("Array message error");
+    expect(extractError(JSON.stringify({ error: "Direct error string" }))).toBe("Direct error string");
+  });
+
+  it("falls back to raw text on non-JSON input", () => {
+    expect(extractError("502 Bad Gateway")).toBe("502 Bad Gateway");
   });
 });

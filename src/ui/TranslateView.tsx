@@ -90,6 +90,7 @@ export function TranslateView({
                       <summary class={c.ok ? "ok" : "warn"}>
                         <time>{new Date(c.at).toLocaleTimeString()}</time> #{c.index + 1} {c.kind} ·{" "}
                         {c.status || "network error"}
+                        {c.error ? `: ${c.error}` : ""}
                         {c.usage
                           ? ` · ${c.usage.promptTokens.toLocaleString()} in / ${c.usage.completionTokens.toLocaleString()} out${
                               c.usage.reasoningTokens ? ` (+${c.usage.reasoningTokens.toLocaleString()} thinking)` : ""

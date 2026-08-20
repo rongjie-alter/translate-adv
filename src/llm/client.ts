@@ -149,10 +149,18 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
   };
 }
 
-function extractError(body: string): string | null {
+export function extractError(body: string): string | null {
   try {
     const j = JSON.parse(body);
-    return j?.error?.message ?? j?.message ?? null;
+    const target = Array.isArray(j) ? j[0] : j;
+    if (!target || typeof target !== "object") {
+      return typeof target === "string" ? target : null;
+    }
+    const err = target.error;
+    if (typeof err === "string") return err;
+    if (typeof err?.message === "string") return err.message;
+    if (typeof target.message === "string") return target.message;
+    return null;
   } catch {
     return body.slice(0, 300) || null;
   }

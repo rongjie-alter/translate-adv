@@ -132,7 +132,7 @@ export async function sendRequest(args: {
         user,
         ok: false,
         status,
-        error: (e as Error).message,
+        error: e instanceof LlmError ? e.message : (e as Error).message,
       });
       if (!(e instanceof LlmError) || !e.retryable) throw e;
       if (e.status === 429) deps.limiter.penalize(e.retryAfter ?? 30);
