@@ -48,4 +48,47 @@ describe("glossaryBlock", () => {
     expect(prompt).not.toContain("  ？");
     expect(prompt).toContain("  Alice = Alice");
   });
+
+  it("promotes custom mappings into official entries for names without parser translations", () => {
+    const speakers: Speaker[] = [
+      { jp: "タサブロウ" },
+      { jp: "ハナコ" },
+    ];
+    const block = glossaryBlock(speakers, "en", { "タサブロウ": "Tasaburou" });
+    expect(block).toContain("Use these official character names exactly:");
+    expect(block).toContain("  タサブロウ = Tasaburou");
+    expect(block).toContain("Characters in this scene");
+    expect(block).toContain("  ハナコ");
+    expect(block).not.toContain("  タサブロウ\n");
+  });
+
+  it("lets parser metadata win over a custom mapping", () => {
+    const speakers: Speaker[] = [
+      { jp: "花子", tl: { en: "Hanako" } },
+      { jp: "花子", tl: { en: "Hanako" } },
+    ];
+    const block = glossaryBlock(speakers, "en", { "花子": "MyOverride" });
+    expect(block).toContain("  花子 = Hanako");
+    expect(block).not.toContain("MyOverride");
+  });
+
+  it("keeps blank or whitespace-only custom mappings in the current fallback section", () => {
+    const speakers: Speaker[] = [{ jp: "タサブロウ" }, { jp: "ハナコ" }];
+    const block = glossaryBlock(speakers, "en", {
+      "タサブロウ": "  ",
+      "ハナコ": "",
+    });
+    expect(block).not.toContain("Use these official character names exactly:");
+    expect(block).toContain("Characters in this scene");
+    expect(block).toContain("  タサブロウ");
+    expect(block).toContain("  ハナコ");
+  });
+
+  it("uses the same custom mapping through buildSystemPrompt", () => {
+    const prompt = buildSystemPrompt(DEFAULT_SYSTEM_PROMPT, "en", [{ jp: "タサブロウ" }], {
+      "タサブロウ": "Tasaburou",
+    });
+    expect(prompt).toContain("  タサブロウ = Tasaburou");
+    expect(prompt).toContain("Use these official character names exactly:");
+  });
 });

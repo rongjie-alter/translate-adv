@@ -1,7 +1,5 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { parseBookHtml } from "../scenario/parseHtml";
-import { isTranslatable } from "../scenario/model";
+import { isTranslatable, type Book, type Chapter } from "../scenario/model";
 import {
   ArtifactError,
   artifactFileName,
@@ -12,11 +10,25 @@ import {
   type Artifact,
 } from "./exchange";
 
-const book = parseBookHtml(
-  "touroumatsuri2026.book.html",
-  readFileSync("book/touroumatsuri2026.book.html", "utf8"),
-);
-const chapter = book.chapters[0];
+const chapter: Chapter = {
+  name: "tourou2026_0",
+  nodes: [
+    { kind: "label", id: "quest_evMain_touroumatsuri2026_0_a_alt1" },
+    { kind: "text", uid: "tourou2026_0_a_alt1/1", src: "こんにちは", hash: "11111111", speaker: { jp: "タサブロウ" } },
+    { kind: "select", uid: "tourou2026_0_a_alt1/2", src: "（飛び起きる）", hash: "22222222", to: "quest_evMain_touroumatsuri2026_0_b_alt1" },
+    { kind: "jump", to: "quest_evMain_touroumatsuri2026_0_b_alt1" },
+    { kind: "text", uid: "tourou2026_0_a_alt1/3", src: "またね", hash: "33333333", speaker: { jp: "花子", tl: { en: "Hanako" } } },
+  ],
+  units: 3,
+  chars: 30,
+};
+const book: Book = {
+  file: "touroumatsuri2026.book.html",
+  srcHash: "00000000",
+  chapters: [chapter],
+  hasMeta: true,
+  hasCharaMeta: true,
+};
 
 function make(overrides: Partial<Artifact> = {}, fill = true): Artifact {
   const translations = new Map<string, string>();
@@ -70,6 +82,55 @@ describe("buildArtifact", () => {
 
   it("names files by book, chapter and language", () => {
     expect(artifactFileName(a)).toBe("touroumatsuri2026.tourou2026_0.en.tl.json");
+  });
+
+  it("persists a custom target-language speaker name into the artifact", () => {
+    const translations = new Map<string, string>();
+    for (const n of chapter.nodes) if (isTranslatable(n)) translations.set(n.uid, `[EN] ${n.src}`);
+    const first = chapter.nodes.find(
+      (n): n is Extract<typeof n, { kind: "text" }> => n.kind === "text" && !!n.speaker,
+    )!;
+    const display = first.speaker!.nameText ?? first.speaker!.jp;
+    const custom = buildArtifact({
+      book: book.file,
+      srcHash: book.srcHash,
+      chapter,
+      lang: "en",
+      model: "mock",
+      translations,
+      generatedAt: 1000,
+      customNames: { [display]: "Custom Hero" },
+    });
+
+    const matching = custom.units.find((u) => u.id === first.uid);
+    expect(matching?.speaker?.tl?.en).toBe("Custom Hero");
+    expect(matching?.speaker?.tl?.["zh-hans"] ?? matching?.speaker?.jp).toBe(matching?.speaker?.jp);
+    expect(matching?.speaker?.jp).toBe(first.speaker!.jp);
+  });
+
+  it("does not overwrite a parser-provided official translation with a custom name", () => {
+    const translations = new Map<string, string>();
+    for (const n of chapter.nodes) if (isTranslatable(n)) translations.set(n.uid, `[EN] ${n.src}`);
+    const firstOfficial = chapter.nodes.find(
+      (n): n is Extract<typeof n, { kind: "text" }> =>
+        n.kind === "text" && !!n.speaker?.tl?.en,
+    )!;
+    const display = firstOfficial.speaker!.nameText ?? firstOfficial.speaker!.jp;
+    const original = firstOfficial.speaker!.tl!.en;
+    const custom = buildArtifact({
+      book: book.file,
+      srcHash: book.srcHash,
+      chapter,
+      lang: "en",
+      model: "mock",
+      translations,
+      generatedAt: 1000,
+      customNames: { [display]: "Custom Override" },
+    });
+
+    const matching = custom.units.find((u) => u.id === firstOfficial.uid);
+    expect(matching?.speaker?.tl?.en).toBe(original);
+    expect(matching?.speaker?.tl?.en).not.toBe("Custom Override");
   });
 });
 

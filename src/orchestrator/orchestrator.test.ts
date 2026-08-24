@@ -1,21 +1,39 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { LlmError, type ChatResponse } from "../llm/client";
 import { calibrate, estimateJob, estimateTokens } from "../llm/estimate";
 import { emptyState, RateLimiter } from "../llm/limiter";
 import { DEFAULT_SYSTEM_PROMPT, buildSystemPrompt } from "../llm/prompt";
 import { makeLabelMap } from "../scenario/labels";
-import { isTranslatable, type SceneNode } from "../scenario/model";
-import { chapterSpeakers, parseBookHtml } from "../scenario/parseHtml";
+import { isTranslatable, type Book, type Chapter, type SceneNode } from "../scenario/model";
+import { chapterSpeakers } from "../scenario/parseHtml";
 import { chunkNodes } from "./chunker";
 import { jobId, type Job } from "./job";
 import { runJob, type RunEvent } from "./runner";
 
-const book = parseBookHtml(
-  "touroumatsuri2026.book.html",
-  readFileSync("book/touroumatsuri2026.book.html", "utf8"),
-);
-const chapter = book.chapters[0];
+const chapterNodes: SceneNode[] = [];
+for (let i = 0; i < 220; i++) {
+  if (i > 0 && i % 30 === 0) chapterNodes.push({ kind: "label", id: `quest_evMain_touroumatsuri2026_${i}` });
+  chapterNodes.push({
+    kind: "text",
+    uid: `tourou2026_0/${i + 1}`,
+    src: "あ".repeat(20) + String(i + 1),
+    hash: String(i + 1).padStart(8, "0"),
+    speaker: { jp: "タサブロウ" },
+  });
+}
+const chapter: Chapter = {
+  name: "tourou2026_0",
+  nodes: chapterNodes,
+  units: 220,
+  chars: 880,
+};
+const book: Book = {
+  file: "touroumatsuri2026.book.html",
+  srcHash: "00000000",
+  chapters: [chapter],
+  hasMeta: true,
+  hasCharaMeta: true,
+};
 
 const OPTS = {
   maxInputTokens: 4000,

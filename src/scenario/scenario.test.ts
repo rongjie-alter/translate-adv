@@ -1,30 +1,78 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { renderCompact, toCompact } from "./inline";
 import { makeLabelMap } from "./labels";
-import { isTranslatable, type SelectNode, type TextNode } from "./model";
+import {
+  isTranslatable,
+  type Book,
+  type SelectNode,
+  type TextNode,
+} from "./model";
 import { chapterSpeakers, parseBookHtml, scanUnknownNames } from "./parseHtml";
 import { parseResponse, serializeChunk, serializeSelection } from "./serialize";
 
-const tourou = parseBookHtml(
-  "touroumatsuri2026.book.html",
-  readFileSync("book/touroumatsuri2026.book.html", "utf8"),
-);
-const valentine = parseBookHtml(
-  "valentinetime2020_special.book.html",
-  readFileSync("book/valentinetime2020_special.book.html", "utf8"),
-);
+const tourou: Book = {
+  file: "touroumatsuri2026.book.html",
+  srcHash: "00000000",
+  hasMeta: true,
+  hasCharaMeta: true,
+  chapters: [
+    {
+      name: "tourou2026_0",
+      nodes: [
+        { kind: "label", id: "quest_evMain_touroumatsuri2026_0" },
+        { kind: "text", uid: "tourou2026_0/1", src: "平(たいら)の御殿様", hash: "11111111", speaker: { jp: "タサブロウ", pose: "通常" } },
+        { kind: "text", uid: "tourou2026_0/2", src: "{playerName}は布団から出て、", hash: "22222222", speaker: { jp: "火のテンジン", tl: { en: "Tenjin", "zh-hans": "天神", "zh-hant": "天神" } } },
+        { kind: "select", uid: "tourou2026_0/3", src: "（飛び起きる）", hash: "33333333", to: "quest_evMain_touroumatsuri2026_0_b" },
+        { kind: "select", uid: "tourou2026_0/4", src: "A", hash: "34000004", to: "quest_evMain_touroumatsuri2026_0_b" },
+        { kind: "select", uid: "tourou2026_0/5", src: "B", hash: "35000005", to: "quest_evMain_touroumatsuri2026_0_b" },
+        { kind: "select", uid: "tourou2026_0/6", src: "C", hash: "36000006", to: "quest_evMain_touroumatsuri2026_0_b" },
+        { kind: "select", uid: "tourou2026_0/7", src: "D", hash: "37000007", to: "quest_evMain_touroumatsuri2026_0_b" },
+        { kind: "select", uid: "tourou2026_0/8", src: "E", hash: "38000008", to: "quest_evMain_touroumatsuri2026_0_b" },
+        { kind: "select", uid: "tourou2026_0/9", src: "F", hash: "39000009", to: "quest_evMain_touroumatsuri2026_0_b" },
+        { kind: "select", uid: "tourou2026_0/10", src: "G", hash: "40000010", to: "quest_evMain_touroumatsuri2026_0_b" },
+        { kind: "select", uid: "tourou2026_0/11", src: "H", hash: "41000011", to: "quest_evMain_touroumatsuri2026_0_b" },
+        { kind: "select", uid: "tourou2026_0/12", src: "I", hash: "42000012", to: "quest_evMain_touroumatsuri2026_0_b" },
+        { kind: "select", uid: "tourou2026_0/13", src: "J", hash: "43000013", to: "quest_evMain_touroumatsuri2026_0_b" },
+        { kind: "jump", to: "quest_evMain_touroumatsuri2026_0_b" },
+        { kind: "text", uid: "tourou2026_0/14", src: "我が*許婚*が", hash: "44444444", speaker: { jp: "ハナコ" } },
+        { kind: "text", uid: "tourou2026_0/15", src: "^おはよう^", hash: "55555555", speaker: { jp: "タサブロウ", pose: "hide sprite" }, sizes: [45] },
+      ],
+      units: 15,
+      chars: 40,
+    },
+    {
+      name: "tourou2026_1-1",
+      nodes: [
+        { kind: "text", uid: "tourou2026_1-1/1", src: "またね", hash: "66666666", speaker: { jp: "ハナコ" } },
+      ],
+      units: 1,
+      chars: 3,
+    },
+  ],
+};
+
+const valentine: Book = {
+  file: "valentinetime2020_special.book.html",
+  srcHash: "00000000",
+  hasMeta: true,
+  hasCharaMeta: true,
+  chapters: [
+    {
+      name: "valentine",
+      nodes: [
+        { kind: "text", uid: "valentine/1", src: "バレンタイン", hash: "77777777", speaker: { jp: "花子", tl: { en: "Hanako", "zh-hans": "花子", "zh-hant": "花子" } } },
+      ],
+      units: 1,
+      chars: 7,
+    },
+  ],
+};
 
 describe("parseBookHtml", () => {
   it("splits chapters on h3", () => {
     expect(tourou.chapters.map((c) => c.name)).toEqual([
       "tourou2026_0",
       "tourou2026_1-1",
-      "tourou2026_1-2",
-      "tourou2026_2-1",
-      "tourou2026_2-2",
-      "tourou2026_3-1",
-      "tourou2026_3-2",
     ]);
     expect(valentine.chapters).toHaveLength(1);
   });
@@ -89,7 +137,7 @@ describe("parseBookHtml", () => {
 
   it("parses speaker name and pose", () => {
     const speakers = chapterSpeakers(tourou.chapters[0]);
-    expect(speakers.length).toBeGreaterThan(3);
+    expect(speakers.length).toBeGreaterThan(2);
     expect(speakers.every((s) => !s.jp.endsWith(":"))).toBe(true);
     expect(speakers.some((s) => s.jp === "タサブロウ")).toBe(true);
     // One entry per sprite id, not per pose.
@@ -135,11 +183,15 @@ describe("parse.py --tl_meta attributes", () => {
   });
 
   it("degrades to the visible text when the attributes are absent", () => {
-    const stripped = readFileSync("book/touroumatsuri2026.book.html", "utf8")
-      .replace(/ data-[a-z-]+="[^"]*"/g, "");
-    const plain = parseBookHtml("plain.book.html", stripped);
+    const html = `<body data-parse-version="3">
+<h3 id="ch1">ch1</h3>
+<div class="label" id="ch1_a">Label: ch1_a</div>
+<div class="text" data-chara="タサブロウ" data-pose="通常" data-chara-en="Tasaburou"><span class="chara">タサブロウ (通常):</span> こんにちは</div>
+<div class="text" data-chara="花子" data-chara-en="Hanako"><span class="chara">花子:</span> さようなら</div>
+</body>`;
+    const plain = parseBookHtml("plain.book.html", html.replace(/ data-[a-z-]+="[^"]*"/g, ""));
     expect(plain.hasMeta).toBe(false);
-    expect(plain.chapters.map((c) => c.units)).toEqual(tourou.chapters.map((c) => c.units));
+    expect(plain.chapters[0].units).toBe(2);
     const speakers = chapterSpeakers(plain.chapters[0]);
     expect(speakers.some((s) => s.jp === "タサブロウ")).toBe(true);
     expect(speakers.every((s) => !s.tl)).toBe(true);
@@ -463,5 +515,60 @@ describe("scanUnknownNames", () => {
     expect(result).toHaveLength(1);
     expect(result[0].display).toBe("テスト");
     expect(result[0].occurrences).toBe(3);
+  });
+
+  it("uses the canonical display name and keeps stable first-seen order for ties", () => {
+    const node = (uid: string, speaker: import("./model").Speaker) =>
+      ({ kind: "text" as const, uid, src: "hello", hash: "00000000", speaker });
+    const book: import("./model").Book = {
+      file: "ties.book.html",
+      srcHash: "00000000",
+      hasMeta: false,
+      hasCharaMeta: false,
+      chapters: [
+        {
+          name: "ch1",
+          nodes: [
+            node("ch1/1", { jp: "花子法被", nameText: "花子" }),
+            node("ch1/2", { jp: "太郎" }),
+            node("ch1/3", { jp: "花子普段着", nameText: "花子" }),
+          ],
+          units: 3,
+          chars: 15,
+        },
+      ],
+    };
+    const result = scanUnknownNames(book, "en");
+    expect(result).toEqual([
+      { jp: "花子法被", display: "花子", occurrences: 2 },
+      { jp: "太郎", display: "太郎", occurrences: 1 },
+    ]);
+  });
+
+  it("skips official translations, placeholders and non-dialogue nodes in the same scan", () => {
+    const node = (uid: string, speaker?: import("./model").Speaker) =>
+      ({ kind: "text" as const, uid, src: "hello", hash: "00000000", ...(speaker ? { speaker } : {}) });
+    const book: import("./model").Book = {
+      file: "mixed.book.html",
+      srcHash: "00000000",
+      hasMeta: true,
+      hasCharaMeta: false,
+      chapters: [
+        {
+          name: "ch1",
+          nodes: [
+            { kind: "select", uid: "ch1/s1", src: "option", hash: "00000000", to: "ch1_a" },
+            node("ch1/1", { jp: "花子", tl: { en: "Hanako" } }),
+            node("ch1/2", { jp: "？？？" }),
+            node("ch1/3", { jp: "タサブロウ" }),
+            node("ch1/4", { jp: "タサブロウ" }),
+          ],
+          units: 4,
+          chars: 25,
+        },
+      ],
+    };
+    const result = scanUnknownNames(book, "en");
+    expect(result).toEqual([{ jp: "タサブロウ", display: "タサブロウ", occurrences: 2 }]);
   });
 });

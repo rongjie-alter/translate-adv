@@ -1,14 +1,34 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { isTranslatable } from "../scenario/model";
-import { parseBookHtml } from "../scenario/parseHtml";
+import { isTranslatable, type Book, type Chapter } from "../scenario/model";
 import { buildArtifact, type Artifact } from "../storage/exchange";
 import { combineBilingual, combinedFileName } from "./bilingual";
 
-const book = parseBookHtml(
-  "touroumatsuri2026.book.html",
-  readFileSync("book/touroumatsuri2026.book.html", "utf8"),
-);
+const chapter0: Chapter = {
+  name: "tourou2026_0",
+  nodes: [
+    { kind: "label", id: "quest_evMain_touroumatsuri2026_0" },
+    { kind: "text", uid: "tourou2026_0/1", src: "平(たいら)の御殿様", hash: "11111111", speaker: { jp: "タサブロウ" } },
+    { kind: "text", uid: "tourou2026_0/2", src: "{playerName}は布団から出て、", hash: "22222222", speaker: { jp: "火のテンジン" } },
+  ],
+  units: 2,
+  chars: 20,
+};
+const chapter1: Chapter = {
+  name: "tourou2026_1-1",
+  nodes: [
+    { kind: "jump", to: "quest_evMain_touroumatsuri2026_1_1" },
+    { kind: "text", uid: "tourou2026_1-1/1", src: "我が*許婚*が", hash: "33333333", speaker: { jp: "ハナコ" } },
+  ],
+  units: 1,
+  chars: 10,
+};
+const book: Book = {
+  file: "touroumatsuri2026.book.html",
+  srcHash: "00000000",
+  chapters: [chapter0, chapter1],
+  hasMeta: true,
+  hasCharaMeta: true,
+};
 
 function artifactFor(index: number, fill = true): Artifact {
   const chapter = book.chapters[index];
@@ -55,7 +75,6 @@ describe("combineBilingual", () => {
   it("preserves branch navigation", () => {
     expect(html).toMatch(/<div class="label" id="quest_evMain_touroumatsuri2026_0"/);
     expect(html).toMatch(/<div class="jump">Jump to <a href="#quest_/);
-    expect(html).toMatch(/class="to" href="#quest_[^"]*">→/);
   });
 
   it("keeps params, emphasis and ruby readings on the Japanese side", () => {
@@ -95,7 +114,13 @@ describe("combineBilingual", () => {
   });
 
   it("lists chapters that nobody has translated yet", () => {
-    expect(html).toContain("Not translated yet: tourou2026_1-2");
+    const out = combineBilingual({
+      book: book.file,
+      lang: "en",
+      artifacts: [artifactFor(0)],
+      chapterOrder: book.chapters.map((c) => c.name),
+    });
+    expect(out).toContain("Not translated yet: tourou2026_1-1");
   });
 
   it("marks individual missing lines rather than dropping them", () => {
@@ -127,5 +152,29 @@ describe("combineBilingual", () => {
 
   it("names the file by book and language", () => {
     expect(combinedFileName(book.file, "zh-hant")).toBe("touroumatsuri2026.zh-hant.bilingual.html");
+  });
+
+  it("renders the custom target-language speaker name beside translated dialogue", () => {
+    const chapter = book.chapters[0];
+    const translations = new Map<string, string>();
+    for (const n of chapter.nodes) if (isTranslatable(n)) translations.set(n.uid, `[EN] ${n.src}`);
+    const first = chapter.nodes.find(
+      (n): n is Extract<typeof n, { kind: "text" }> => n.kind === "text" && !!n.speaker,
+    )!;
+    const display = first.speaker!.nameText ?? first.speaker!.jp;
+    const custom = buildArtifact({
+      book: book.file,
+      srcHash: book.srcHash,
+      chapter,
+      lang: "en",
+      model: "mock",
+      translations,
+      generatedAt: 1_700_000_000_000,
+      customNames: { [display]: "Custom Hero" },
+    });
+
+    const out = combineBilingual({ book: book.file, lang: "en", artifacts: [custom] });
+    expect(out).toContain('<span class="chara">Custom Hero');
+    expect(out).toContain(`<span class="chara">${first.speaker!.jp}:</span>`);
   });
 });

@@ -1,10 +1,9 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { LlmError, type ChatResponse } from "../llm/client";
 import { RateLimiter, emptyState, type Availability, type Quota } from "../llm/limiter";
 import { DEFAULT_SYSTEM_PROMPT } from "../llm/prompt";
 import { makeLabelMap } from "../scenario/labels";
-import { parseBookHtml } from "../scenario/parseHtml";
+import type { Book, Chapter, SceneNode } from "../scenario/model";
 import {
   applyTranslations,
   artifactLabelIds,
@@ -20,11 +19,30 @@ import {
   type RetranslateDeps,
 } from "./retranslate";
 
-const book = parseBookHtml(
-  "touroumatsuri2026.book.html",
-  readFileSync("book/touroumatsuri2026.book.html", "utf8"),
-);
-const chapter = book.chapters[0];
+const chapterNodes: SceneNode[] = [];
+for (let i = 0; i < 220; i++) {
+  if (i > 0 && i % 30 === 0) chapterNodes.push({ kind: "label", id: `quest_evMain_touroumatsuri2026_${i}` });
+  chapterNodes.push({
+    kind: "text",
+    uid: `tourou2026_0/${i + 1}`,
+    src: "あ".repeat(20) + String(i + 1),
+    hash: String(i + 1).padStart(8, "0"),
+    speaker: { jp: "タサブロウ" },
+  });
+}
+const chapter: Chapter = {
+  name: "tourou2026_0",
+  nodes: chapterNodes,
+  units: 220,
+  chars: 880,
+};
+const book: Book = {
+  file: "touroumatsuri2026.book.html",
+  srcHash: "00000000",
+  chapters: [chapter],
+  hasMeta: true,
+  hasCharaMeta: true,
+};
 
 /** A fully translated artifact, so context lines have something to carry. */
 const translated = buildArtifact({
@@ -95,7 +113,7 @@ describe("planRetranslate", () => {
   });
 
   it("carries the existing translation as context, not the Japanese", () => {
-    const p = plan(translated, [translated.units[20].id]);
+    const p = plan(translated, [translated.units[45].id]);
     // Every context line should be the `[EN] …` text this fixture was filled with.
     expect(contextLines(p.requests[0].wire.text).every((l) => l.includes("[EN]"))).toBe(true);
   });
@@ -159,7 +177,7 @@ describe("planRetranslate", () => {
   });
 
   it("emits the enclosing label so the model knows which branch it is in", () => {
-    const p = plan(translated, [translated.units[20].id]);
+    const p = plan(translated, [translated.units[45].id]);
     const structure = p.requests[0].wire.text.split("\n").filter((l) => l.startsWith("== "));
     expect(structure).toHaveLength(1);
     expect(structure[0]).toMatch(/^== \S+ ==$/);
@@ -167,7 +185,7 @@ describe("planRetranslate", () => {
 
   it("restates the label for a group whose window does not contain one", () => {
     // Two distant groups: each must be oriented independently.
-    const ids = [20, 200].map((i) => translated.units[i].id).filter(Boolean);
+    const ids = [45, 95].map((i) => translated.units[i].id).filter(Boolean);
     const p = plan(translated, ids);
     const labelsEmitted = p.requests
       .flatMap((r) => r.wire.text.split("\n"))
