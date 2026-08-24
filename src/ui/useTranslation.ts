@@ -143,8 +143,10 @@ export function useTranslation() {
 
     const calibration = store.calibrationFor(preset.model, lang);
     const speakers = chapterSpeakers(chapter);
+    const customNames = source.customNames?.[lang] ?? {};
     const system =
-      buildSystemPrompt(store.settings.systemPrompt, lang, speakers) + fileNoteBlock(source.note ?? "");
+      buildSystemPrompt(store.settings.systemPrompt, lang, speakers, customNames) +
+      fileNoteBlock(source.note ?? "");
     const maxInputTokens = store.settings.chunkInputTokens || preset.limits.maxInputTokens;
     const chunks = chunksFor(chapter, {
       maxInputTokens,
@@ -202,6 +204,7 @@ export function useTranslation() {
           systemPromptTemplate: store.settings.systemPrompt,
           fileNote: source.note,
           speakers,
+          customNames,
           labels: makeLabelMap(
             chapter.nodes.flatMap((n) =>
               n.kind === "label" ? [n.id] : n.kind === "jump" ? [n.to] : [],
@@ -239,6 +242,7 @@ export function useTranslation() {
           model: preset.model,
           translations,
           generatedAt: Date.now(),
+          customNames,
         }),
       );
 

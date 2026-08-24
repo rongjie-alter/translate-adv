@@ -86,11 +86,16 @@ export function useRetranslate() {
     (artifact: Artifact, uids: string[], preset: Preset, hint?: string): RetryEstimate | null => {
       if (!uids.length) return null;
       const cal = store.calibrationFor(preset.model, artifact.lang, preset);
+      const sourceRec = store.sources.find(
+        (s) => s.file === artifact.book && s.srcHash === artifact.srcHash,
+      );
+      const customNames = sourceRec?.customNames?.[artifact.lang];
       const system = retranslateSystemPrompt(
         store.settings.systemPrompt,
         artifact.lang,
         artifactSpeakers(artifact),
         hint,
+        customNames,
       );
       const systemTokens = estimateTokens(system, cal.charsPerToken);
       const plan = planRetranslate(
@@ -129,6 +134,11 @@ export function useRetranslate() {
 
       const calibration = store.calibrationFor(preset.model, artifact.lang, preset);
       abort.current = new AbortController();
+
+      const sourceRec = store.sources.find(
+        (s) => s.file === artifact.book && s.srcHash === artifact.srcHash,
+      );
+      const customNames = sourceRec?.customNames?.[artifact.lang];
       setState({
         artifactKey: key,
         chapter: artifact.chapter,
@@ -173,6 +183,7 @@ export function useRetranslate() {
             calibration,
             lang: artifact.lang,
             hint,
+            customNames,
             // Nothing is persisted here: the user has not accepted these yet.
             saveUnits: async () => {},
             onCalibration: (c) => {

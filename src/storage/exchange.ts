@@ -67,13 +67,16 @@ export function buildArtifact(args: {
   model: string;
   translations: Map<string, string>;
   generatedAt: number;
+  /** User-supplied display-name → translated-name map for `lang`. Applied only when
+   *  the parser did not already provide an official value for `lang`. */
+  customNames?: Record<string, string>;
 }): Artifact {
   const units: ArtifactUnit[] = [];
   const markers: ArtifactMarker[] = [];
 
   for (const node of args.chapter.nodes) {
     if (isTranslatable(node)) {
-      units.push(toUnit(node, args.translations.get(node.uid) ?? ""));
+      units.push(toUnit(node, args.translations.get(node.uid) ?? "", args.lang, args.customNames));
     } else {
       markers.push(toMarker(node, units.length));
     }
@@ -94,14 +97,28 @@ export function buildArtifact(args: {
   };
 }
 
-function toUnit(node: Extract<SceneNode, { uid: string }>, tl: string): ArtifactUnit {
+function toUnit(
+  node: Extract<SceneNode, { uid: string }>,
+  tl: string,
+  lang?: Lang,
+  customNames?: Record<string, string>,
+): ArtifactUnit {
+  let speaker = node.kind === "text" && node.speaker ? node.speaker : undefined;
+  if (speaker && lang && customNames) {
+    const display = speaker.nameText ?? speaker.jp;
+    const custom = customNames[display]?.trim();
+    // Only apply when the parser did not already supply an official translation.
+    if (custom && !speaker.tl?.[lang]) {
+      speaker = { ...speaker, tl: { ...speaker.tl, [lang]: custom } };
+    }
+  }
   return {
     id: node.uid,
     kind: node.kind,
     src: node.src,
     tl,
     hash: node.hash,
-    ...(node.kind === "text" && node.speaker ? { speaker: node.speaker } : {}),
+    ...(speaker ? { speaker } : {}),
     ...(node.kind === "select" ? { to: node.to } : {}),
     ...("sizes" in node && node.sizes ? { sizes: node.sizes } : {}),
   };

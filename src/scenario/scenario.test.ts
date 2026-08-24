@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { renderCompact, toCompact } from "./inline";
 import { makeLabelMap } from "./labels";
 import { isTranslatable, type SelectNode, type TextNode } from "./model";
-import { chapterSpeakers, parseBookHtml } from "./parseHtml";
+import { chapterSpeakers, parseBookHtml, scanUnknownNames } from "./parseHtml";
 import { parseResponse, serializeChunk, serializeSelection } from "./serialize";
 
 const tourou = parseBookHtml(
@@ -401,5 +401,67 @@ describe("renderCompact", () => {
     const { text } = toCompact(doc.querySelector("p")!);
     expect(text).toBe("{teamLeaderCharaName}と話す");
     expect(renderCompact(text)).toContain("<code>&lt;param=teamLeaderCharaName&gt;</code>");
+  });
+});
+
+describe("scanUnknownNames", () => {
+  it("returns names sorted by descending occurrence count", () => {
+    const names = tourou.chapters
+      .flatMap((c) => c.nodes)
+      .filter((n) => n.kind === "text" && n.speaker);
+    // Sanity: the fixture has speakers at all.
+    expect(names.length).toBeGreaterThan(0);
+
+    const result = scanUnknownNames(tourou, "en");
+    // The list must be sorted descending.
+    for (let i = 1; i < result.length; i++) {
+      expect(result[i].occurrences).toBeLessThanOrEqual(result[i - 1].occurrences);
+    }
+  });
+
+  it("excludes names that have an official translation for the selected language", () => {
+    // valentine has --tl_meta so some names carry official translations.
+    const en = scanUnknownNames(valentine, "en");
+    // None of the returned names should have speaker.tl.en set.
+    for (const n of en) {
+      const allNodes = valentine.chapters.flatMap((c) => c.nodes);
+      const matching = allNodes.find(
+        (node) =>
+          node.kind === "text" &&
+          node.speaker &&
+          (node.speaker.nameText ?? node.speaker.jp) === n.display,
+      );
+      if (matching && matching.kind === "text" && matching.speaker) {
+        expect(matching.speaker.tl?.en).toBeUndefined();
+      }
+    }
+  });
+
+  it("excludes question-mark-only placeholder names", () => {
+    const result = scanUnknownNames(tourou, "en");
+    for (const n of result) {
+      expect(/^[？?]+$/.test(n.display.trim())).toBe(false);
+    }
+  });
+
+  it("aggregates occurrences across all chapters", () => {
+    // Build a minimal synthetic book with the same name in two chapters.
+    const speaker = { jp: "テスト", nameText: "テスト" };
+    const node = (uid: string) =>
+      ({ kind: "text" as const, uid, src: "hello", hash: "00000000", speaker });
+    const synthBook: import("./model").Book = {
+      file: "test.book.html",
+      srcHash: "00000000",
+      hasMeta: true,
+      hasCharaMeta: true,
+      chapters: [
+        { name: "ch1", nodes: [node("ch1/1"), node("ch1/2")], units: 2, chars: 10 },
+        { name: "ch2", nodes: [node("ch2/1")], units: 1, chars: 5 },
+      ],
+    };
+    const result = scanUnknownNames(synthBook, "en");
+    expect(result).toHaveLength(1);
+    expect(result[0].display).toBe("テスト");
+    expect(result[0].occurrences).toBe(3);
   });
 });

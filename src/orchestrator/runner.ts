@@ -41,6 +41,8 @@ export interface RunnerDeps {
   /** Per-file free-text note (glossary, character context) configured on the Scan tab. */
   fileNote?: string;
   speakers: Speaker[];
+  /** User-supplied custom name mappings (display → translated) for the active language. */
+  customNames?: Record<string, string>;
   labels: LabelMap;
   calibration: Calibration;
   /** Persist translated units for one chunk. Must resolve before the chunk is marked done. */
@@ -63,7 +65,8 @@ export async function runJob(
   signal: AbortSignal,
 ): Promise<Job> {
   const system =
-    buildSystemPrompt(deps.systemPromptTemplate, lang, deps.speakers) + fileNoteBlock(deps.fileNote ?? "");
+    buildSystemPrompt(deps.systemPromptTemplate, lang, deps.speakers, deps.customNames) +
+    fileNoteBlock(deps.fileNote ?? "");
   let context: string[] = [];
   let calibration = deps.calibration;
 

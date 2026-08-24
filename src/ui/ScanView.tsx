@@ -10,7 +10,7 @@ import { buildSystemPrompt, fileNoteBlock } from "../llm/prompt";
 import { serializeChunk } from "../scenario/serialize";
 import { makeLabelMap } from "../scenario/labels";
 import { LANGS, LANG_LABEL, type Chapter } from "../scenario/model";
-import { chapterSpeakers } from "../scenario/parseHtml";
+import { chapterSpeakers, scanUnknownNames } from "../scenario/parseHtml";
 import { jobId, jobProgress } from "../orchestrator/job";
 import { artifactKey } from "../storage/exchange";
 import { useActiveBook, useStore } from "./store";
@@ -123,6 +123,16 @@ export function ScanView({
               onSave={(note) => void store.updateSourceNote(active.source.id, note)}
             />
           </label>
+
+          <NameScanner
+            key={active.source.id + "|" + lang}
+            book={active.book}
+            lang={lang}
+            saved={active.source.customNames?.[lang] ?? {}}
+            onSave={(display, name) =>
+              void store.updateCustomName(active.source.id, lang, display, name)
+            }
+          />
 
           <table class="chapters">
             <thead>
@@ -255,8 +265,9 @@ export function ScanView({
     return useMemo(() => {
       if (!c) return null;
       const cal = store.calibrationFor(preset.model, lang);
+      const customNames = active?.source.customNames?.[lang] ?? {};
       const system =
-        buildSystemPrompt(store.settings.systemPrompt, lang, chapterSpeakers(c)) +
+        buildSystemPrompt(store.settings.systemPrompt, lang, chapterSpeakers(c), customNames) +
         fileNoteBlock(active?.source.note ?? "");
       const chunks = chunksFor(c, {
         maxInputTokens: store.settings.chunkInputTokens || preset.limits.maxInputTokens,
@@ -281,7 +292,7 @@ export function ScanView({
         }),
         samples: cal.samples,
       };
-    }, [c, lang, preset, store.settings, store.artifacts, active?.source.note]);
+    }, [c, lang, preset, store.settings, store.artifacts, active?.source.note, active?.source.customNames]);
   }
 }
 
@@ -311,4 +322,86 @@ function formatDuration(seconds: number): string {
   const m = Math.round(seconds / 60);
   if (m < 60) return `${m} min`;
   return `${Math.floor(m / 60)} h ${m % 60} min`;
+}
+
+/**
+ * Name-entry list below the file-note textarea.
+ *
+ * Keyed by `source.id + lang` so it remounts (and resets draft state) whenever the
+ * file or target language changes. Values persist on blur, not per-keystroke, to avoid
+ * hammering IndexedDB while the user is typing.
+ */
+function NameScanner({
+  book,
+  lang,
+  saved,
+  onSave,
+}: {
+  book: import("../scenario/model").Book;
+  lang: import("../scenario/model").Lang;
+  saved: Record<string, string>;
+  onSave: (display: string, name: string) => void;
+}) {
+  const names = useMemo(() => scanUnknownNames(book, lang), [book, lang]);
+
+  if (!names.length) {
+    return (
+      <p class="hint name-scanner-empty">
+        All character names in this file have an official {LANG_LABEL[lang]} translation.
+      </p>
+    );
+  }
+
+  return (
+    <div class="name-scanner">
+      <p class="name-scanner-label">
+        Unofficial character names — enter translations to include them as official (sent with every
+        request and written into exported files):
+      </p>
+      <div class="name-rows">
+        {names.map((n) => (
+          <NameRow
+            key={n.display}
+            display={n.display}
+            occurrences={n.occurrences}
+            initial={saved[n.display] ?? ""}
+            onSave={(v) => onSave(n.display, v)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NameRow({
+  display,
+  occurrences,
+  initial,
+  onSave,
+}: {
+  display: string;
+  occurrences: number;
+  initial: string;
+  onSave: (v: string) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  return (
+    <div class="name-row">
+      <span class="name-jp">
+        {display}
+        <span class="name-badge">{occurrences}×</span>
+      </span>
+      <span class="name-eq">=</span>
+      <input
+        class="name-input"
+        type="text"
+        value={value}
+        placeholder="translated name"
+        onInput={(e) => setValue((e.target as HTMLInputElement).value)}
+        onBlur={() => {
+          if (value !== initial) onSave(value);
+        }}
+      />
+    </div>
+  );
 }

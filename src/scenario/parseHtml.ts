@@ -193,3 +193,50 @@ export function chapterSpeakers(chapter: Chapter): Speaker[] {
   }
   return Array.from(seen.values());
 }
+
+export interface UnknownName {
+  /** Raw Japanese identifier used as the map key. */
+  jp: string;
+  /** Canonical display form (`nameText ?? jp`). */
+  display: string;
+  occurrences: number;
+}
+
+/**
+ * Collect all speaker names in the book that have no official translation for
+ * `lang`, aggregated across every chapter.
+ *
+ * - Excludes names whose `tl[lang]` is set (officially translated).
+ * - Excludes question-mark-only placeholders.
+ * - Returns one entry per canonical display name, sorted by descending
+ *   occurrence count with stable first-seen ordering as a tie-break.
+ */
+export function scanUnknownNames(book: Book, lang: Lang): UnknownName[] {
+  const counts = new Map<string, number>();
+  const speakers = new Map<string, Speaker>();
+
+  for (const chapter of book.chapters) {
+    for (const node of chapter.nodes) {
+      if (node.kind !== "text" || !node.speaker) continue;
+      const s = node.speaker;
+      const display = s.nameText ?? s.jp;
+      // Skip officially translated names.
+      if (s.tl?.[lang]) continue;
+      // Skip question-mark-only placeholders.
+      if (!display.trim() || /^[？?]+$/.test(display.trim())) continue;
+
+      const key = display;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (!speakers.has(key)) speakers.set(key, s);
+    }
+  }
+
+  // Sort by descending count; insertion order gives a stable first-seen tie-break.
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([display, occurrences]) => ({
+      jp: speakers.get(display)!.jp,
+      display,
+      occurrences,
+    }));
+}

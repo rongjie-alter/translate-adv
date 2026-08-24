@@ -71,6 +71,7 @@ export interface Store {
   addFiles(files: File[]): Promise<void>;
   removeSource(id: string): Promise<void>;
   updateSourceNote(id: string, note: string): Promise<void>;
+  updateCustomName(id: string, lang: Lang, display: string, name: string): Promise<void>;
   refreshJobs(): Promise<void>;
   saveArtifact(a: Artifact): Promise<void>;
   removeArtifact(key: string): Promise<void>;
@@ -223,6 +224,21 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
       const rec = prev.find((s) => s.id === id);
       if (!rec) return prev;
       const next = { ...rec, note };
+      void db.putSource(next);
+      return prev.map((s) => (s.id === id ? next : s));
+    });
+  }, []);
+
+  const updateCustomName = useCallback(async (id: string, lang: Lang, display: string, name: string) => {
+    setSources((prev) => {
+      const rec = prev.find((s) => s.id === id);
+      if (!rec) return prev;
+      const langMap = { ...(rec.customNames?.[lang] ?? {}) };
+      const trimmed = name.trim();
+      if (trimmed) langMap[display] = trimmed;
+      else delete langMap[display];
+      const customNames = { ...rec.customNames, [lang]: langMap };
+      const next = { ...rec, customNames };
       void db.putSource(next);
       return prev.map((s) => (s.id === id ? next : s));
     });
@@ -394,6 +410,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     addFiles,
     removeSource,
     updateSourceNote,
+    updateCustomName,
     refreshJobs,
     saveArtifact,
     removeArtifact,

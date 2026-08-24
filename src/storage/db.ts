@@ -44,6 +44,12 @@ export interface SourceRecord {
   addedAt: number;
   /** Free-text glossary/context the user attaches to this file, sent with every chunk. */
   note?: string;
+  /**
+   * User-supplied name translations, keyed by target language then by the canonical
+   * display name (`nameText ?? jp`). Only present when the user has typed at least
+   * one mapping. Existing records without this field are treated as having no mappings.
+   */
+  customNames?: Partial<Record<Lang, Record<string, string>>>;
 }
 
 export interface UnitRecord {

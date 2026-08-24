@@ -443,6 +443,8 @@ export interface RetranslateDeps extends Omit<SendDeps, "onEvent"> {
   lang: Lang;
   /** A user's free-text note for this run only. Never written to settings. */
   hint?: string;
+  /** User-supplied custom name mappings (display → translated) for the active language. */
+  customNames?: Record<string, string>;
   options?: Partial<ContextOptions>;
   /**
    * Persist one request's worth of results before the next is sent, so an abort or
@@ -470,8 +472,9 @@ export function retranslateSystemPrompt(
   lang: Lang,
   speakers: Speaker[],
   hint?: string,
+  customNames?: Record<string, string>,
 ): string {
-  const base = buildSystemPrompt(template, lang, speakers);
+  const base = buildSystemPrompt(template, lang, speakers, customNames);
   return `${base}\n\n${RETRANSLATE_INSTRUCTION}${hintBlock(hint ?? "")}`;
 }
 
@@ -485,6 +488,7 @@ export async function runRetranslate(
     deps.lang,
     deps.speakers,
     deps.hint,
+    deps.customNames,
   );
 
   let calibration = deps.calibration;

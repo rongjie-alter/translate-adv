@@ -42,18 +42,31 @@ Output rules:
   no ==, =>, ?, ~ lines, no commentary, no code fences.
 - Never merge, split, skip or reorder lines. If a line is untranslatable, repeat it verbatim.`;
 
-export function buildSystemPrompt(template: string, lang: Lang, speakers: Speaker[]): string {
+export function buildSystemPrompt(
+  template: string,
+  lang: Lang,
+  speakers: Speaker[],
+  customNames?: Record<string, string>,
+): string {
   return template
     .replace(/\{\{targetLanguage\}\}/g, LANG_LABEL[lang])
-    .replace(/\{\{glossary\}\}/g, glossaryBlock(speakers, lang));
+    .replace(/\{\{glossary\}\}/g, glossaryBlock(speakers, lang, customNames));
 }
 
 /**
  * Character names, sent once per chunk instead of being re-derived per line.
  * Names sourced from `common.chapter.json` (via `parse.py --tl_meta`) are marked as
  * official so the model does not "improve" them.
+ *
+ * `customNames` maps canonical display names (the same key used in `SourceRecord.customNames`)
+ * to a user-supplied translation. Entries here are treated as official only when the
+ * speaker has no parser-provided translation for `lang`.
  */
-export function glossaryBlock(speakers: Speaker[], lang: Lang): string {
+export function glossaryBlock(
+  speakers: Speaker[],
+  lang: Lang,
+  customNames?: Record<string, string>,
+): string {
   if (!speakers.length) return "";
   const seen = new Set<string>();
   const official: string[] = [];
@@ -63,8 +76,13 @@ export function glossaryBlock(speakers: Speaker[], lang: Lang): string {
     if (seen.has(display)) continue;
     seen.add(display);
     if (!display.trim() || /^[？?]+$/.test(display.trim())) continue;
-    if (s.tl?.[lang]) official.push(`  ${display} = ${speakerName(s, lang)}`);
-    else rest.push(`  ${display}`);
+    if (s.tl?.[lang]) {
+      official.push(`  ${display} = ${speakerName(s, lang)}`);
+    } else {
+      const custom = customNames?.[display]?.trim();
+      if (custom) official.push(`  ${display} = ${custom}`);
+      else rest.push(`  ${display}`);
+    }
   }
 
   const parts: string[] = [];
