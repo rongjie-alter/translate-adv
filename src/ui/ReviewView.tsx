@@ -15,7 +15,7 @@ import * as db from "../storage/db";
 import {
   applyTranslations,
   artifactKey,
-  shiftTranslations,
+  shiftTranslationsByOffset,
   type Artifact,
   type ArtifactMarker,
   type ShiftDirection,
@@ -31,6 +31,7 @@ interface ShiftDraft {
   initialSelectedIds: string[];
   artifact: Artifact;
   selectedIds: string[];
+  offset: number;
 }
 
 export function ReviewView({
@@ -178,20 +179,21 @@ export function ReviewView({
     (direction: ShiftDirection) => {
       setEditingId(null);
       setShiftDraft((prev) => {
-        const base = prev?.artifact ?? persistedArtifact;
-        const activeIds = prev?.selectedIds ?? selectedIds;
+        const base = persistedArtifact;
+        const activeIds = prev?.initialSelectedIds ?? selectedIds;
+        const offset = (prev?.offset ?? 0) + (direction === "up" ? -1 : 1);
         if (!base) return prev;
         const indexes = selectedIndexes(base, activeIds);
         if (!indexes) return prev;
-        const result = shiftTranslations(base.units, indexes, direction);
+        const result = shiftTranslationsByOffset(base.units, indexes, offset);
         if (!result) return prev;
         const nextArtifact = applyShiftPreview(base, result.translations);
         const nextSelectedIds = result.destinationIndexes.map((index) => base.units[index].id);
-        if (prev) return { ...prev, artifact: nextArtifact, selectedIds: nextSelectedIds };
         return {
-          initialSelectedIds: [...activeIds],
+          initialSelectedIds: prev?.initialSelectedIds ?? [...activeIds],
           artifact: nextArtifact,
           selectedIds: nextSelectedIds,
+          offset,
         };
       });
     },

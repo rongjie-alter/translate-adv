@@ -9,6 +9,7 @@ import {
   parseArtifact,
   serializeArtifact,
   shiftTranslations,
+  shiftTranslationsByOffset,
   type Artifact,
 } from "./exchange";
 
@@ -213,6 +214,43 @@ describe("shiftTranslations", () => {
     }));
 
     expect(next.filter((unit) => !unit.tl).map((unit) => unit.id)).toEqual(["line/2", "line/3"]);
+  });
+
+  it("computes a reversed preview from the original range instead of accumulating gaps", () => {
+    const result = shiftTranslationsByOffset(units, [2, 3], 1);
+    const next = units.map((unit) => ({
+      ...unit,
+      tl: result?.translations.get(unit.id) ?? unit.tl,
+    }));
+
+    expect(next.map((unit) => unit.tl)).toEqual(["tl 1", "tl 2", "", "tl 3", "tl 4"]);
+    expect(result?.destinationIndexes).toEqual([3, 4]);
+  });
+
+  it("makes up two then down three equivalent to one net shift down", () => {
+    let offset = 0;
+    let result = shiftTranslationsByOffset(units, [2, 3], offset);
+    for (const direction of ["up", "up", "down", "down", "down"] as const) {
+      offset += direction === "up" ? -1 : 1;
+      result = shiftTranslationsByOffset(units, [2, 3], offset);
+    }
+
+    const next = units.map((unit) => ({
+      ...unit,
+      tl: result?.translations.get(unit.id) ?? unit.tl,
+    }));
+
+    expect(next.map((unit) => unit.tl)).toEqual(["tl 1", "tl 2", "", "tl 3", "tl 4"]);
+  });
+
+  it("preserves rows between the source and destination ranges", () => {
+    const result = shiftTranslationsByOffset(units, [0, 1], 3);
+    const next = units.map((unit) => ({
+      ...unit,
+      tl: result?.translations.get(unit.id) ?? unit.tl,
+    }));
+
+    expect(next.map((unit) => unit.tl)).toEqual(["", "", "tl 3", "tl 1", "tl 2"]);
   });
 });
 

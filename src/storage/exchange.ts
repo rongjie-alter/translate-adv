@@ -69,20 +69,22 @@ export interface ShiftResult {
 }
 
 /**
- * Move a contiguous selection of translations by one artifact row.
+ * Move a contiguous selection of translations by an artifact-row offset.
  *
- * Artifact rows never move: only their `tl` values are reassigned. The adjacent
- * destination row is intentionally overwritten, and the vacated row is cleared.
+ * Artifact rows never move: only their `tl` values are reassigned. Destination
+ * rows are intentionally overwritten, and source-only rows are cleared. Rows
+ * between a source and destination range are left unchanged.
  * Returning null keeps invalid selections and boundary shifts side-effect free.
  */
-export function shiftTranslations(
+export function shiftTranslationsByOffset(
   units: readonly ArtifactUnit[],
   indexes: readonly number[],
-  direction: ShiftDirection,
+  offset: number,
 ): ShiftResult | null {
   const sorted = [...indexes].sort((a, b) => a - b);
   if (
     !sorted.length ||
+    !Number.isInteger(offset) ||
     sorted.some(
       (index, i) =>
         index < 0 ||
@@ -95,24 +97,35 @@ export function shiftTranslations(
 
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
-  const offset = direction === "up" ? -1 : 1;
   const destinationFirst = first + offset;
   const destinationLast = last + offset;
   if (destinationFirst < 0 || destinationLast >= units.length) return null;
 
-  const touchedFirst = Math.min(first, destinationFirst);
-  const touchedLast = Math.max(last, destinationLast);
+  const sourceIndexes = new Set(sorted);
+  const destinationIndexes = sorted.map((index) => index + offset);
+  const destinationSet = new Set(destinationIndexes);
   const translations = new Map<string, string>();
-  for (let index = touchedFirst; index <= touchedLast; index++) {
+  for (const index of [...sourceIndexes, ...destinationSet].sort((a, b) => a - b)) {
     const sourceIndex = index - offset;
-    const isShiftedSource = sourceIndex >= first && sourceIndex <= last;
-    translations.set(units[index].id, isShiftedSource ? units[sourceIndex].tl : "");
+    translations.set(
+      units[index].id,
+      destinationSet.has(index) ? units[sourceIndex].tl : "",
+    );
   }
 
   return {
     translations,
-    destinationIndexes: sorted.map((index) => index + offset),
+    destinationIndexes,
   };
+}
+
+/** Move a contiguous selection of translations by one artifact row. */
+export function shiftTranslations(
+  units: readonly ArtifactUnit[],
+  indexes: readonly number[],
+  direction: ShiftDirection,
+): ShiftResult | null {
+  return shiftTranslationsByOffset(units, indexes, direction === "up" ? -1 : 1);
 }
 
 export function buildArtifact(args: {
