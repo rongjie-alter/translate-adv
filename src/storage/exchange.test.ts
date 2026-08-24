@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import { isTranslatable, type Book, type Chapter } from "../scenario/model";
 import {
   ArtifactError,
+  applyTranslations,
   artifactFileName,
   buildArtifact,
   mergeArtifacts,
   parseArtifact,
   serializeArtifact,
+  shiftTranslations,
   type Artifact,
 } from "./exchange";
 
@@ -131,6 +133,86 @@ describe("buildArtifact", () => {
     const matching = custom.units.find((u) => u.id === firstOfficial.uid);
     expect(matching?.speaker?.tl?.en).toBe(original);
     expect(matching?.speaker?.tl?.en).not.toBe("Custom Override");
+  });
+});
+
+describe("applyTranslations", () => {
+  it("can update text while preserving each line's existing model marker", () => {
+    const marked = make({
+      units: make().units.map((unit, index) =>
+        index === 1 ? { ...unit, model: "other-model" } : unit,
+      ),
+    });
+    const next = applyTranslations(marked, new Map([[marked.units[1].id, "shifted"]]), {
+      model: marked.model,
+      at: 2000,
+      preserveModel: true,
+    });
+
+    expect(next.units[1].tl).toBe("shifted");
+    expect(next.units[1].model).toBe("other-model");
+  });
+});
+
+describe("shiftTranslations", () => {
+  const units: Artifact["units"] = [1, 2, 3, 4, 5].map((n) => ({
+    id: `line/${n}`,
+    kind: "text",
+    src: `src ${n}`,
+    tl: `tl ${n}`,
+    hash: `${n}`,
+  }));
+
+  it("shifts selected rows down and clears the vacated row", () => {
+    const result = shiftTranslations(units, [1, 2, 3], "down");
+
+    expect(result?.destinationIndexes).toEqual([2, 3, 4]);
+    expect([...result!.translations]).toEqual([
+      ["line/2", ""],
+      ["line/3", "tl 2"],
+      ["line/4", "tl 3"],
+      ["line/5", "tl 4"],
+    ]);
+  });
+
+  it("shifts selected rows up and clears the vacated row", () => {
+    const result = shiftTranslations(units, [1, 2, 3], "up");
+
+    expect(result?.destinationIndexes).toEqual([0, 1, 2]);
+    expect([...result!.translations]).toEqual([
+      ["line/1", "tl 2"],
+      ["line/2", "tl 3"],
+      ["line/3", "tl 4"],
+      ["line/4", ""],
+    ]);
+  });
+
+  it("preserves rows outside the touched range while replacing the destination row", () => {
+    const result = shiftTranslations(units, [1, 2], "down");
+    const next = units.map((unit) => ({
+      ...unit,
+      tl: result?.translations.get(unit.id) ?? unit.tl,
+    }));
+
+    expect(next.map((unit) => unit.tl)).toEqual(["tl 1", "", "tl 2", "tl 3", "tl 5"]);
+  });
+
+  it("rejects empty, non-contiguous, and boundary selections", () => {
+    expect(shiftTranslations(units, [], "down")).toBeNull();
+    expect(shiftTranslations(units, [1, 3], "down")).toBeNull();
+    expect(shiftTranslations(units, [0, 1], "up")).toBeNull();
+    expect(shiftTranslations(units, [3, 4], "down")).toBeNull();
+  });
+
+  it("supports empty translations so the caller can recompute incomplete rows", () => {
+    const partial = units.map((unit, index) => ({ ...unit, tl: index === 1 ? "" : unit.tl }));
+    const result = shiftTranslations(partial, [1, 2], "down");
+    const next = partial.map((unit) => ({
+      ...unit,
+      tl: result?.translations.get(unit.id) ?? unit.tl,
+    }));
+
+    expect(next.filter((unit) => !unit.tl).map((unit) => unit.id)).toEqual(["line/2", "line/3"]);
   });
 });
 

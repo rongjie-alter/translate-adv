@@ -12,13 +12,26 @@ import { renderCompact } from "../scenario/inline";
 import { LANG_LABEL, type Lang } from "../scenario/model";
 import { speakerName } from "../scenario/serialize";
 import * as db from "../storage/db";
-import { applyTranslations, artifactKey, type Artifact, type ArtifactMarker } from "../storage/exchange";
+import {
+  applyTranslations,
+  artifactKey,
+  shiftTranslations,
+  type Artifact,
+  type ArtifactMarker,
+  type ShiftDirection,
+} from "../storage/exchange";
 import { normalizeBookBase } from "../storage/groups";
 import { ReviewMarker, ReviewUnit, type Row } from "./ReviewUnit";
 import { useStore } from "./store";
 import type { Proposal, useRetranslate } from "./useRetranslate";
 
 type Filter = "all" | "gap" | "sel";
+
+interface ShiftDraft {
+  initialSelectedIds: string[];
+  artifact: Artifact;
+  selectedIds: string[];
+}
 
 export function ReviewView({
   retry,
@@ -34,6 +47,7 @@ export function ReviewView({
   const [presetId, setPresetId] = useState(store.settings.presetId);
   const [hint, setHint] = useState("");
   const anchor = useRef<number | null>(null);
+  const [shiftDraft, setShiftDraft] = useState<ShiftDraft | null>(null);
 
   // Which line's translation is open for manual edit, and which lines were touched
   // (manually or via an accepted retranslate) this session — both reset on a chapter switch.
@@ -42,12 +56,17 @@ export function ReviewView({
   useEffect(() => {
     setEditingId(null);
     setEditedIds(new Set());
+    setShiftDraft(null);
   }, [store.reviewKey]);
 
   // Always re-derived by key: a Library delete or a folder-sync merge can pull the
   // artifact out from under this screen mid-session.
-  const artifact = store.artifacts.find((a) => artifactKey(a) === store.reviewKey) ?? null;
-  const selection = store.reviewSelection;
+  const persistedArtifact = store.artifacts.find((a) => artifactKey(a) === store.reviewKey) ?? null;
+  const artifact = shiftDraft?.artifact ?? persistedArtifact;
+  const selection = useMemo<ReadonlySet<string>>(
+    () => new Set(shiftDraft?.selectedIds ?? store.reviewSelection),
+    [shiftDraft?.selectedIds, store.reviewSelection],
+  );
 
   const rows = useMemo(() => (artifact ? buildRows(artifact) : []), [artifact]);
   const labelCounts = useMemo(() => countByLabel(rows), [rows]);
@@ -66,6 +85,13 @@ export function ReviewView({
     () => rows.filter((r) => selection.has(r.id)).map((r) => r.id),
     [rows, selection],
   );
+  const pendingIds = useMemo(() => {
+    if (!shiftDraft || !persistedArtifact) return new Set<string>();
+    const persisted = new Map(persistedArtifact.units.map((u) => [u.id, u.tl]));
+    return new Set(
+      shiftDraft.artifact.units.filter((u) => persisted.get(u.id) !== u.tl).map((u) => u.id),
+    );
+  }, [persistedArtifact, shiftDraft]);
 
   const estimate = useMemo(
     () => (artifact ? retry.estimate(artifact, selectedIds, preset, hint) : null),
@@ -76,6 +102,7 @@ export function ReviewView({
 
   const toggle = useCallback(
     (index: number, shift: boolean) => {
+      if (shiftDraft) return;
       const at = anchor.current;
       if (!shift) anchor.current = index;
       setSelection((prev) => {
@@ -93,55 +120,120 @@ export function ReviewView({
         return next;
       });
     },
-    [shown, rows, setSelection],
+    [shown, rows, setSelection, shiftDraft],
   );
 
   const selectUntranslated = useCallback(() => {
+    if (shiftDraft) return;
     setSelection(new Set(rows.filter((r) => !r.translated).map((r) => r.id)));
-  }, [rows, setSelection]);
+  }, [rows, setSelection, shiftDraft]);
 
-  const startEdit = useCallback((id: string) => setEditingId(id), []);
+  const startEdit = useCallback((id: string) => {
+    if (!shiftDraft) setEditingId(id);
+  }, [shiftDraft]);
   const cancelEdit = useCallback(() => setEditingId(null), []);
 
   /** Write one manually-typed line through the same path an accepted retranslation uses. */
   const saveEdit = useCallback(
     async (uid: string, text: string) => {
-      if (!artifact) return;
-      const key = artifactKey(artifact);
+      if (!persistedArtifact || shiftDraft) return;
+      const key = artifactKey(persistedArtifact);
       const texts = new Map([[uid, text]]);
       const meta = { model: "manual", at: Date.now() };
       await db.putUnits(key, texts, { keepPrevious: true, ...meta });
-      await store.saveArtifact(applyTranslations(artifact, texts, meta));
+      await store.saveArtifact(applyTranslations(persistedArtifact, texts, meta));
       setEditedIds((prev) => new Set(prev).add(uid));
       setEditingId(null);
     },
-    [artifact, store],
+    [persistedArtifact, shiftDraft, store],
   );
 
   /** Put back what the line held before its last edit or accepted retranslation. */
   const revertLine = useCallback(
     async (uid: string) => {
-      if (!artifact) return;
-      await retry.revert(artifact, [uid]);
+      if (!persistedArtifact || shiftDraft) return;
+      await retry.revert(persistedArtifact, [uid]);
       setEditedIds((prev) => {
         const next = new Set(prev);
         next.delete(uid);
         return next;
       });
     },
-    [artifact, retry],
+    [persistedArtifact, retry, shiftDraft],
   );
 
   const selectLabel = useCallback(
     (id: string) => {
+      if (shiftDraft) return;
       setSelection((prev) => {
         const next = new Set(prev);
         for (const r of rows) if (r.label === id) next.add(r.id);
         return next;
       });
     },
-    [rows, setSelection],
+    [rows, setSelection, shiftDraft],
   );
+
+  const shift = useCallback(
+    (direction: ShiftDirection) => {
+      setEditingId(null);
+      setShiftDraft((prev) => {
+        const base = prev?.artifact ?? persistedArtifact;
+        const activeIds = prev?.selectedIds ?? selectedIds;
+        if (!base) return prev;
+        const indexes = selectedIndexes(base, activeIds);
+        if (!indexes) return prev;
+        const result = shiftTranslations(base.units, indexes, direction);
+        if (!result) return prev;
+        const nextArtifact = applyShiftPreview(base, result.translations);
+        const nextSelectedIds = result.destinationIndexes.map((index) => base.units[index].id);
+        if (prev) return { ...prev, artifact: nextArtifact, selectedIds: nextSelectedIds };
+        return {
+          initialSelectedIds: [...activeIds],
+          artifact: nextArtifact,
+          selectedIds: nextSelectedIds,
+        };
+      });
+    },
+    [persistedArtifact, selectedIds],
+  );
+
+  const cancelShift = useCallback(() => {
+    if (!shiftDraft) return;
+    setEditingId(null);
+    setSelection(new Set(shiftDraft.initialSelectedIds));
+    setShiftDraft(null);
+  }, [setSelection, shiftDraft]);
+
+  const confirmShift = useCallback(async () => {
+    if (!shiftDraft || !persistedArtifact) return;
+    const persisted = new Map(persistedArtifact.units.map((u) => [u.id, u.tl]));
+    const texts = new Map<string, string>();
+    for (const unit of shiftDraft.artifact.units) {
+      if (persisted.get(unit.id) !== unit.tl) texts.set(unit.id, unit.tl);
+    }
+    if (!texts.size) {
+      setShiftDraft(null);
+      setSelection(new Set(shiftDraft.selectedIds));
+      store.toast("No translation changes to save.");
+      return;
+    }
+
+    const at = Date.now();
+    const key = artifactKey(persistedArtifact);
+    await db.putUnits(key, texts, { keepPrevious: true, at });
+    await store.saveArtifact(
+      applyTranslations(persistedArtifact, texts, {
+        model: persistedArtifact.model,
+        at,
+        preserveModel: true,
+      }),
+    );
+    setEditedIds((prev) => new Set([...prev, ...texts.keys()]));
+    setSelection(new Set(shiftDraft.selectedIds));
+    setShiftDraft(null);
+    store.toast(`${texts.size} line${texts.size === 1 ? "" : "s"} shifted and saved.`);
+  }, [persistedArtifact, setSelection, shiftDraft, store]);
 
   if (!store.artifacts.length) {
     return (
@@ -159,6 +251,7 @@ export function ReviewView({
         <div class="row">
           <select
             value={store.reviewKey ?? ""}
+            disabled={!!shiftDraft}
             onChange={(e) => store.openReview((e.target as HTMLSelectElement).value || null)}
           >
             <option value="">— pick a chapter —</option>
@@ -204,10 +297,13 @@ export function ReviewView({
               <option value="sel">Selected only</option>
             </select>
             <span class="spacer" />
-            <button onClick={selectUntranslated} disabled={!artifact.incomplete?.length}>
+            <button onClick={selectUntranslated} disabled={!!shiftDraft || !artifact.incomplete?.length}>
               Select untranslated
             </button>
-            <button onClick={() => setSelection(new Set())} disabled={!selection.size}>
+            <button
+              onClick={() => setSelection(new Set())}
+              disabled={!!shiftDraft || !selection.size}
+            >
               Clear
             </button>
           </div>
@@ -235,7 +331,9 @@ export function ReviewView({
                   selected={selection.has(row.id)}
                   focused={false}
                   changed={editedIds.has(row.id)}
-                  editing={editingId === row.id}
+                  pending={pendingIds.has(row.id)}
+                  locked={!!shiftDraft}
+                  editing={!shiftDraft && editingId === row.id}
                   onToggle={toggle}
                   onEdit={startEdit}
                   onSave={saveEdit}
@@ -249,15 +347,20 @@ export function ReviewView({
 
           <ReviewBar
             artifact={artifact}
+            shiftDraft={shiftDraft}
             retry={retry}
             busy={busy}
             selectedIds={selectedIds}
+            pendingCount={pendingIds.size}
             preset={presetId}
             onPreset={setPresetId}
             hint={hint}
             onHint={setHint}
             estimate={estimate}
             onApplied={(ids) => setEditedIds((prev) => new Set([...prev, ...ids]))}
+            onShift={shift}
+            onConfirmShift={confirmShift}
+            onCancelShift={cancelShift}
           />
         </>
       )}
@@ -267,30 +370,63 @@ export function ReviewView({
 
 function ReviewBar({
   artifact,
+  shiftDraft,
   retry,
   busy,
   selectedIds,
+  pendingCount,
   preset,
   onPreset,
   hint,
   onHint,
   estimate,
   onApplied,
+  onShift,
+  onConfirmShift,
+  onCancelShift,
 }: {
   artifact: Artifact;
+  shiftDraft: ShiftDraft | null;
   retry: ReturnType<typeof useRetranslate>;
   busy: boolean;
   selectedIds: string[];
+  pendingCount: number;
   preset: string;
   onPreset: (id: string) => void;
   hint: string;
   onHint: (s: string) => void;
   estimate: ReturnType<ReturnType<typeof useRetranslate>["estimate"]>;
   onApplied: (uids: string[]) => void;
+  onShift: (direction: ShiftDirection) => void;
+  onConfirmShift: () => void;
+  onCancelShift: () => void;
 }) {
   const store = useStore();
   const s = retry.state;
   const chosen = store.settings.presets.find((p) => p.id === preset) ?? store.activePreset();
+
+  if (shiftDraft) {
+    return (
+      <div class="rv-bar shift pending">
+        <ShiftControls
+          artifact={artifact}
+          selectedIds={selectedIds}
+          onShift={onShift}
+        />
+        <div class="row">
+          <span class="rv-pending-label">
+            {pendingCount} unsaved line{pendingCount === 1 ? "" : "s"}
+          </span>
+          <span class="spacer" />
+          <button onClick={onCancelShift}>Cancel</button>
+          <button class="primary" onClick={onConfirmShift}>
+            Confirm
+          </button>
+        </div>
+        <p class="hint">Changes stay in this preview until you confirm or cancel.</p>
+      </div>
+    );
+  }
 
   // Finished: the accept/discard step.
   if (s?.finished && s.proposals.length) {
@@ -384,8 +520,6 @@ function ReviewBar({
     );
   }
 
-  if (!selectedIds.length) return null;
-
   const used = store.settings.limiter[chosen.id]?.dayRequests ?? 0;
   const left = chosen.limits.rpd ? chosen.limits.rpd - used : 0;
 
@@ -393,7 +527,9 @@ function ReviewBar({
     <div class="rv-bar">
       <div class="row">
         <span class="count">
-          {selectedIds.length} line{selectedIds.length === 1 ? "" : "s"} selected
+          {selectedIds.length
+            ? `${selectedIds.length} line${selectedIds.length === 1 ? "" : "s"} selected`
+            : "No lines selected"}
         </span>
         {estimate ? (
           <span class="est">
@@ -405,6 +541,10 @@ function ReviewBar({
           </span>
         ) : null}
       </div>
+      <ShiftControls artifact={artifact} selectedIds={selectedIds} onShift={onShift} />
+      {!selectedIds.length ? (
+        <p class="hint">Select a continuous range of lines to enable shifting or retranslation.</p>
+      ) : null}
       <div class="row">
         <select value={preset} onChange={(e) => onPreset((e.target as HTMLSelectElement).value)}>
           {store.settings.presets.map((p) => (
@@ -420,7 +560,7 @@ function ReviewBar({
           onInput={(e) => onHint((e.target as HTMLInputElement).value)}
         />
         <button
-          disabled={busy}
+          disabled={busy || !selectedIds.length}
           title={busy ? "A translation is already running." : ""}
           onClick={() => void retry.start(artifact, selectedIds, chosen, hint)}
         >
@@ -428,6 +568,47 @@ function ReviewBar({
         </button>
       </div>
       <p class="hint">Nearby lines are sent as context but are not changed.</p>
+    </div>
+  );
+}
+
+function ShiftControls({
+  artifact,
+  selectedIds,
+  onShift,
+}: {
+  artifact: Artifact;
+  selectedIds: string[];
+  onShift: (direction: ShiftDirection) => void;
+}) {
+  const indexes = selectedIndexes(artifact, selectedIds);
+  const canShift = !!indexes;
+  const canUp = canShift && indexes![0] > 0;
+  const canDown = canShift && indexes![indexes!.length - 1] < artifact.units.length - 1;
+  const guidance = !selectedIds.length
+    ? "Select a continuous range to shift."
+    : !canShift
+      ? "Shift requires one continuous range of lines."
+      : `Rows ${indexes![0] + 1}–${indexes![indexes!.length - 1] + 1} selected`;
+
+  return (
+    <div class="row rv-shift-controls">
+      <span class="hint">{guidance}</span>
+      <span class="spacer" />
+      <button
+        disabled={!canUp}
+        title={canShift ? (canUp ? "Move selected translations up one row." : "The selection is already at the first row.") : guidance}
+        onClick={() => onShift("up")}
+      >
+        Shift up
+      </button>
+      <button
+        disabled={!canDown}
+        title={canShift ? (canDown ? "Move selected translations down one row." : "The selection is already at the last row.") : guidance}
+        onClick={() => onShift("down")}
+      >
+        Shift down
+      </button>
     </div>
   );
 }
@@ -503,6 +684,35 @@ function buildRows(a: Artifact): Row[] {
   });
 
   return rows;
+}
+
+function selectedIndexes(a: Artifact, ids: readonly string[]): number[] | null {
+  if (!ids.length) return null;
+  const byId = new Map(a.units.map((unit, index) => [unit.id, index]));
+  const indexes = ids
+    .map((id) => byId.get(id))
+    .filter((index): index is number => index !== undefined)
+    .sort((x, y) => x - y);
+  if (
+    indexes.length !== ids.length ||
+    indexes.some((index, i) => i > 0 && index !== indexes[i - 1] + 1)
+  ) {
+    return null;
+  }
+  return indexes;
+}
+
+function applyShiftPreview(a: Artifact, translations: Map<string, string>): Artifact {
+  const units = a.units.map((unit) =>
+    translations.has(unit.id) ? { ...unit, tl: translations.get(unit.id)! } : unit,
+  );
+  const incomplete = units.filter((unit) => !unit.tl).map((unit) => unit.id);
+  const { incomplete: _was, ...rest } = a;
+  return {
+    ...rest,
+    units,
+    ...(incomplete.length ? { incomplete } : {}),
+  };
 }
 
 function countByLabel(rows: Row[]): Map<string, number> {

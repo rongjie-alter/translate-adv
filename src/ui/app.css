@@ -230,6 +230,7 @@ progress { width: 100%; height: 0.6rem; }
 .rv-unit.title { border-left-color: var(--ok); font-weight: 600; }
 .rv-unit.gap { border-left-color: var(--err); }
 .rv-unit.changed { border-left-color: var(--ok); background: #f0fbf4; }
+.rv-unit.pending { border-left-color: #c18700; background: #fff9e8; }
 .rv-unit input { margin-top: 0.2rem; }
 
 .rv-tl { line-height: 1.45; position: relative; }
@@ -295,6 +296,22 @@ progress { width: 100%; height: 0.6rem; }
 .rv-bar .est { color: var(--muted); font-size: 0.85rem; }
 .rv-bar .hint { margin: 0.25rem 0 0; }
 .rv-hint { flex: 1 1 18rem; }
+.rv-shift-controls { margin-bottom: 0.35rem; }
+.rv-shift-controls .hint { min-width: 12rem; }
+.rv-pending-label {
+  color: #8a6100;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+.rv-bar.shift.pending {
+  border-color: #d6b35a;
+  background: #fffdf3;
+}
+.rv-bar button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
 
 .rv-props { max-height: 22rem; overflow: auto; margin: 0.5rem 0; }
 .rv-prop {
@@ -312,6 +329,12 @@ progress { width: 100%; height: 0.6rem; }
 .toasts { position: fixed; bottom: 1rem; right: 1rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 20; }
 .toast { padding: 0.6rem 0.9rem; border-radius: 6px; background: #23232b; color: #fff; max-width: 26rem; box-shadow: 0 4px 16px #0003; }
 .toast.error { background: var(--err); }
+
+@media (max-width: 38rem) {
+  .rv-shift-controls .spacer { display: none; }
+  .rv-shift-controls .hint { flex: 1 1 100%; }
+  .rv-shift-controls button { flex: 1 1 8rem; }
+}
 
 .conflicts { margin: 1.25rem; padding: 1rem; border: 1px solid #e8d79a; background: #fff5d6; border-radius: 8px; }
 .conflicts ul { margin: 0.5rem 0; }

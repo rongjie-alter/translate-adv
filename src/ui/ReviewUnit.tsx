@@ -38,6 +38,8 @@ export const ReviewUnit = memo(function ReviewUnit({
   selected,
   focused,
   changed,
+  pending,
+  locked,
   editing,
   onToggle,
   onEdit,
@@ -49,6 +51,8 @@ export const ReviewUnit = memo(function ReviewUnit({
   selected: boolean;
   focused: boolean;
   changed: boolean;
+  pending: boolean;
+  locked: boolean;
   /** Whether this row's translation is currently the one open for manual edit. */
   editing: boolean;
   onToggle: (index: number, shift: boolean) => void;
@@ -61,6 +65,7 @@ export const ReviewUnit = memo(function ReviewUnit({
   if (selected) classes.push("sel");
   if (focused) classes.push("focus");
   if (changed) classes.push("changed");
+  if (pending) classes.push("pending");
   if (!row.translated) classes.push("gap");
   if (editing) classes.push("editing");
 
@@ -83,7 +88,7 @@ export const ReviewUnit = memo(function ReviewUnit({
       aria-selected={selected}
       style={{ "--depth": row.depth }}
       onClick={(e) => {
-        if (!editing) onToggle(row.index, e.shiftKey);
+        if (!editing && !locked) onToggle(row.index, e.shiftKey);
       }}
     >
       {/* Decorative: the row owns the click, so a live checkbox would toggle twice. */}
@@ -123,7 +128,7 @@ export const ReviewUnit = memo(function ReviewUnit({
             <span class="rv-none">[not translated]</span>
           )}
           {row.to ? <span class="rv-to">→ {row.to}</span> : null}
-          {!editing ? (
+          {!editing && !locked ? (
             <button
               class="rv-edit-btn"
               title="Edit this line"
@@ -135,7 +140,7 @@ export const ReviewUnit = memo(function ReviewUnit({
               ✎
             </button>
           ) : null}
-          {!editing && changed ? (
+          {!editing && !locked && changed ? (
             <button
               class="rv-revert-btn"
               title="Revert to the previous translation"

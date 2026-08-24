@@ -59,6 +59,62 @@ export interface Artifact {
   incomplete?: string[];
 }
 
+export type ShiftDirection = "up" | "down";
+
+export interface ShiftResult {
+  /** New translation values for the rows touched by the shift. */
+  translations: Map<string, string>;
+  /** Artifact indexes now holding the selected translations. */
+  destinationIndexes: number[];
+}
+
+/**
+ * Move a contiguous selection of translations by one artifact row.
+ *
+ * Artifact rows never move: only their `tl` values are reassigned. The adjacent
+ * destination row is intentionally overwritten, and the vacated row is cleared.
+ * Returning null keeps invalid selections and boundary shifts side-effect free.
+ */
+export function shiftTranslations(
+  units: readonly ArtifactUnit[],
+  indexes: readonly number[],
+  direction: ShiftDirection,
+): ShiftResult | null {
+  const sorted = [...indexes].sort((a, b) => a - b);
+  if (
+    !sorted.length ||
+    sorted.some(
+      (index, i) =>
+        index < 0 ||
+        index >= units.length ||
+        (i > 0 && index !== sorted[i - 1] + 1),
+    )
+  ) {
+    return null;
+  }
+
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const offset = direction === "up" ? -1 : 1;
+  const destinationFirst = first + offset;
+  const destinationLast = last + offset;
+  if (destinationFirst < 0 || destinationLast >= units.length) return null;
+
+  const touchedFirst = Math.min(first, destinationFirst);
+  const touchedLast = Math.max(last, destinationLast);
+  const translations = new Map<string, string>();
+  for (let index = touchedFirst; index <= touchedLast; index++) {
+    const sourceIndex = index - offset;
+    const isShiftedSource = sourceIndex >= first && sourceIndex <= last;
+    translations.set(units[index].id, isShiftedSource ? units[sourceIndex].tl : "");
+  }
+
+  return {
+    translations,
+    destinationIndexes: sorted.map((index) => index + offset),
+  };
+}
+
 export function buildArtifact(args: {
   book: string;
   srcHash: string;
@@ -228,11 +284,12 @@ export function artifactSpeakers(a: Artifact): Speaker[] {
 export function applyTranslations(
   a: Artifact,
   translations: Map<string, string>,
-  meta: { model: string; at: number },
+  meta: { model: string; at: number; preserveModel?: boolean },
 ): Artifact {
   const units = a.units.map((u) => {
     const tl = translations.get(u.id);
     if (tl === undefined) return u;
+    if (meta.preserveModel) return { ...u, tl };
     const { model: _drop, ...rest } = u;
     return { ...rest, tl, ...(meta.model && meta.model !== a.model ? { model: meta.model } : {}) };
   });

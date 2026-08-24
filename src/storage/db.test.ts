@@ -68,4 +68,13 @@ describe("mergeUnitRecord", () => {
     expect(r.model).toBe("other");
     expect(r.at).toBe(42);
   });
+
+  it("preserves existing provenance when no replacement model is given", () => {
+    const r = mergeUnitRecord(
+      row("old", { model: "source-model" }),
+      { jobId: JOB, uid: "u/1", text: "new" },
+      { keepPrevious: true, at: 42 },
+    );
+    expect(r.model).toBe("source-model");
+  });
 });

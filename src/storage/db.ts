@@ -204,7 +204,7 @@ export function mergeUnitRecord(
     uid: next.uid,
     text: next.text,
     ...(prev !== undefined ? { prev } : {}),
-    ...(opts.model ? { model: opts.model } : {}),
+    ...(opts.model ? { model: opts.model } : old?.model ? { model: old.model } : {}),
     ...(opts.at ? { at: opts.at } : {}),
   };
 }
