@@ -177,4 +177,42 @@ describe("combineBilingual", () => {
     expect(out).toContain('<span class="chara">Custom Hero');
     expect(out).toContain(`<span class="chara">${first.speaker!.jp}:</span>`);
   });
+
+  it("renders selection conditions and execute attributes in bilingual output", () => {
+    const chapterWithCond: Chapter = {
+      name: "ch_cond",
+      nodes: [
+        {
+          kind: "select",
+          uid: "ch_cond/1",
+          src: "選択肢",
+          hash: "12345678",
+          to: "label_target",
+          cond: "chasers2ab1==TRUE",
+          exec: "chasers2ab1=FALSE",
+        },
+      ],
+      units: 1,
+      chars: 3,
+    };
+    const art = buildArtifact({
+      book: "202607_montage_special.book.html",
+      srcHash: "00000000",
+      chapter: chapterWithCond,
+      lang: "en",
+      model: "mock",
+      translations: new Map([["ch_cond/1", "Choice"]]),
+      generatedAt: 1_700_000_000_000,
+    });
+
+    const out = combineBilingual({
+      book: "202607_montage_special.book.html",
+      lang: "en",
+      artifacts: [art],
+    });
+    expect(out).toContain('data-if="chasers2ab1==TRUE"');
+    expect(out).toContain('data-do="chasers2ab1=FALSE"');
+    expect(out).toContain('(If chasers2ab1==TRUE)');
+    expect(out).toContain('(Execute chasers2ab1=FALSE)');
+  });
 });

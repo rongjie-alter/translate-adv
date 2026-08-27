@@ -356,17 +356,13 @@ document.querySelector("#ruby-btn").onclick = function() {
         line = self.escapeLine(c.get(dialogue, ""))
         arg2 = c.get("Arg2", None)
         arg3 = c.get("Arg3", None)
-        if self.tl_meta:
-          # Keep the condition out of the anchor text, so what gets translated is
-          # the option the player reads and nothing else.
-          meta = self.metaAttrs([("to", hash), ("if", arg2), ("do", arg3)])
-        else:
-          meta = ''
-          if arg2:
-            line += f" (If {arg2})"
-          if arg3:
-            line += f" (Execute {arg3})"
-        self.write(f'<div class="select"{meta}><a href="#{hash}">{line}</a></div>')
+        cond = ''
+        meta = self.metaAttrs([("to", hash), ("if", arg2), ("do", arg3)])
+        if arg2:
+          cond += f" (If {arg2})"
+        if arg3:
+          cond += f" (Execute {arg3})"
+        self.write(f'<div class="select"{meta}><a href="#{hash}">{line}</a>{cond}</div>')
       elif self.effecton:
         self.processEffects(c)
 

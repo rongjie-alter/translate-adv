@@ -25,6 +25,10 @@ export interface ArtifactUnit {
   speaker?: Speaker;
   /** Branch target, for `select` units. */
   to?: string;
+  /** `Arg2` condition, e.g. `chasers2ab1==TRUE`. */
+  cond?: string;
+  /** `Arg3` effect, e.g. `chasers2ab1=TRUE`. */
+  exec?: string;
   sizes?: number[];
   /**
    * Set only when this line came from a different model than the chapter's.
@@ -189,6 +193,8 @@ function toUnit(
     hash: node.hash,
     ...(speaker ? { speaker } : {}),
     ...(node.kind === "select" ? { to: node.to } : {}),
+    ...(node.kind === "select" && node.cond ? { cond: node.cond } : {}),
+    ...(node.kind === "select" && node.exec ? { exec: node.exec } : {}),
     ...("sizes" in node && node.sizes ? { sizes: node.sizes } : {}),
   };
 }
@@ -239,7 +245,16 @@ export function artifactNodes(a: Artifact): SceneNode[] {
 function fromUnit(u: ArtifactUnit): SceneNode {
   const sizes = u.sizes?.length ? { sizes: u.sizes } : {};
   if (u.kind === "select") {
-    return { kind: "select", uid: u.id, src: u.src, hash: u.hash, to: u.to ?? "", ...sizes };
+    return {
+      kind: "select",
+      uid: u.id,
+      src: u.src,
+      hash: u.hash,
+      to: u.to ?? "",
+      ...(u.cond ? { cond: u.cond } : {}),
+      ...(u.exec ? { exec: u.exec } : {}),
+      ...sizes,
+    };
   }
   if (u.kind === "title") return { kind: "title", uid: u.id, src: u.src, hash: u.hash };
   return {

@@ -61,7 +61,7 @@ describe("buildArtifact", () => {
     expect(a.units[0].hash).toBeTruthy();
   });
 
-  it("carries branch structure so combining needs no source file", () => {
+  it("carries branch structure and select cond/exec so combining needs no source file", () => {
     expect(a.markers.some((m) => m.kind === "label" && m.id)).toBe(true);
     expect(a.markers.some((m) => m.kind === "jump" && m.to)).toBe(true);
     expect(a.units.some((u) => u.kind === "select" && u.to)).toBe(true);

@@ -141,12 +141,17 @@ function renderUnit(u: ArtifactUnit, lang: Lang): string {
   const src = renderCompact(u.src, { sizes: u.sizes });
 
   const cls = u.kind === "select" ? "select" : u.kind === "title" ? "title" : "text";
-  const open = u.kind === "select" ? `<div class="select" id="opt-${attr(u.id)}">` : `<div class="${cls}">`;
+  const ifAttr = u.cond ? ` data-if="${attr(u.cond)}"` : "";
+  const doAttr = u.exec ? ` data-do="${attr(u.exec)}"` : "";
+  const open = u.kind === "select" ? `<div class="select" id="opt-${attr(u.id)}"${ifAttr}${doAttr}>` : `<div class="${cls}">`;
   const to = u.to ? ` <a class="to" href="#${attr(u.to)}">→ ${escapeHtml(u.to)}</a>` : "";
+  let condSuffix = "";
+  if (u.cond) condSuffix += ` (If ${escapeHtml(u.cond)})`;
+  if (u.exec) condSuffix += ` (Execute ${escapeHtml(u.exec)})`;
 
   return (
-    `${open}<div class="tl">${chara}${tl}${to}</div>` +
-    `<div class="jp">${jpChara}${src}</div></div>`
+    `${open}<div class="tl">${chara}${tl}${to}${condSuffix}</div>` +
+    `<div class="jp">${jpChara}${src}${condSuffix}</div></div>`
   );
 }
 
