@@ -42,6 +42,8 @@ export interface ChatResponse {
 /** Gemini's OpenAI-compat layer; asking it to include thoughts needs this exact host check. */
 const GEMINI_HOST = "generativelanguage.googleapis.com";
 
+const GOOGLE_MAX_OUTPUT_64K = 65536;
+
 export class LlmError extends Error {
   constructor(
     message: string,
@@ -59,6 +61,8 @@ export class LlmError extends Error {
 export async function chat(req: ChatRequest): Promise<ChatResponse> {
   const url = `${req.baseUrl.replace(/\/+$/, "")}/chat/completions`;
   let res: Response;
+  const isGeminiHost = req.baseUrl.includes(GEMINI_HOST);
+  const maxOutputTokens = isGeminiHost ? GOOGLE_MAX_OUTPUT_64K : req.maxOutputTokens;
   try {
     res = await fetch(url, {
       method: "POST",
@@ -72,13 +76,13 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
           { role: "system", content: req.system },
           { role: "user", content: req.user },
         ],
-        //...(req.maxOutputTokens ? { max_tokens: req.maxOutputTokens } : {}),
+        max_tokens: maxOutputTokens,
         // Gemini's OpenAI-compat layer rejects a request carrying both `reasoning_effort`
         // and `extra_body.google.thinking_config` — only send the former off-Gemini.
-        ...(req.reasoningEffort && !req.baseUrl.includes(GEMINI_HOST)
+        ...(req.reasoningEffort && !isGeminiHost
           ? { reasoning_effort: req.reasoningEffort }
           : {}),
-        ...(req.baseUrl.includes(GEMINI_HOST)
+        ...(isGeminiHost
           ? {
             extra_body: {
               google: {
