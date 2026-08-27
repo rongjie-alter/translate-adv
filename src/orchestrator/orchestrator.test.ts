@@ -431,7 +431,7 @@ describe("buildSystemPrompt", () => {
       { jp: "火のテンジン", tl: { "zh-hant": "天神" } },
       { jp: "タサブロウ" },
     ]);
-    expect(p).toContain("繁體中文");
+    expect(p).toContain("Traditional Chinese");
     expect(p).not.toContain("{{targetLanguage}}");
     expect(p).toContain("火のテンジン = 天神");
     expect(p).toContain("タサブロウ");

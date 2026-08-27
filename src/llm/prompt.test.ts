@@ -39,6 +39,12 @@ describe("glossaryBlock", () => {
     expect(block).toContain("  花子 = Hanako");
   });
 
+  it("builds full system prompt with Simplified Chinese for zh-hans", () => {
+    const prompt = buildSystemPrompt(DEFAULT_SYSTEM_PROMPT, "zh-hans", []);
+    expect(prompt).toContain("into Simplified Chinese.");
+    expect(prompt).not.toContain("简体中文");
+  });
+
   it("builds full system prompt without question-mark character names", () => {
     const speakers: Speaker[] = [
       { jp: "？" },

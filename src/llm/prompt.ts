@@ -10,6 +10,12 @@
 import { LANG_LABEL, type Lang, type Speaker } from "../scenario/model";
 import { speakerName } from "../scenario/serialize";
 
+export const PROMPT_LANG_LABEL: Record<Lang, string> = {
+  en: "English",
+  "zh-hans": "Simplified Chinese",
+  "zh-hant": "Traditional Chinese",
+};
+
 export const DEFAULT_SYSTEM_PROMPT = `You are translating a Japanese visual-novel scenario into {{targetLanguage}}.
 
 Input format — one line per unit:
@@ -49,7 +55,7 @@ export function buildSystemPrompt(
   customNames?: Record<string, string>,
 ): string {
   return template
-    .replace(/\{\{targetLanguage\}\}/g, LANG_LABEL[lang])
+    .replace(/\{\{targetLanguage\}\}/g, PROMPT_LANG_LABEL[lang] ?? LANG_LABEL[lang])
     .replace(/\{\{glossary\}\}/g, glossaryBlock(speakers, lang, customNames));
 }
 
