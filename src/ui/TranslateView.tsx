@@ -98,10 +98,14 @@ export function TranslateView({
                           : ""}
                       </summary>
                       <div class="call-body">
-                        <h4>System</h4>
-                        <CopyPre text={c.system} />
-                        <h4>User</h4>
-                        <CopyPre text={c.user} />
+                        <details>
+                          <summary>System Prompt</summary>
+                          <CopyPre text={c.system} />
+                        </details>
+                        <details>
+                          <summary>User Prompt</summary>
+                          <CopyPre text={c.user} />
+                        </details>
                         {c.error ? (
                           <>
                             <h4>Error</h4>
@@ -110,14 +114,18 @@ export function TranslateView({
                         ) : null}
                         {c.response ? (
                           <>
-                            <h4>Response</h4>
-                            <CopyPre text={c.response} />
+                            <details>
+                              <summary>Response</summary>
+                              <CopyPre text={c.response} />
+                            </details>
                           </>
                         ) : null}
                         {c.reasoning ? (
                           <>
-                            <h4>Thinking</h4>
-                            <CopyPre text={c.reasoning} />
+                            <details>
+                              <summary>Thinking</summary>
+                              <CopyPre text={c.reasoning} />
+                            </details>
                           </>
                         ) : null}
                       </div>
