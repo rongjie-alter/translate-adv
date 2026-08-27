@@ -24,6 +24,7 @@ export function App() {
   const busy = translation.running || retry.running;
   const [dragging, setDragging] = useState(false);
   const metaWarningRef = useRef<HTMLDialogElement>(null);
+  const helpDialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
     const dialog = metaWarningRef.current;
@@ -88,6 +89,29 @@ export function App() {
             </button>
           ))}
         </nav>
+        <span class="spacer" />
+        <button
+          class="help-btn"
+          aria-label="Help & Guide"
+          title="Help & Guide"
+          onClick={() => helpDialogRef.current?.showModal()}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </button>
       </header>
 
       {translation.running && store.view !== "translate" ? (
@@ -132,6 +156,70 @@ export function App() {
       </div>
 
       {dragging ? <div class="dropzone">Drop .book.html or .tl.json files</div> : null}
+
+      <dialog
+        class="help-dialog"
+        ref={helpDialogRef}
+        onClick={(e) => {
+          if (helpDialogRef.current && e.target === helpDialogRef.current) {
+            helpDialogRef.current.close();
+          }
+        }}
+      >
+        <div class="help-dialog-header">
+          <h2>How to use translate-adv</h2>
+          <button
+            class="help-dialog-close"
+            aria-label="Close"
+            onClick={() => helpDialogRef.current?.close()}
+          >
+            ✕
+          </button>
+        </div>
+        <ol class="help-steps">
+          <li>
+            Go to <strong>Settings</strong> page to create and set Google AI Studio API key
+            <ul>
+              <li> You do not need a credit card to get a free key</li>
+            </ul>
+          </li>
+          <li>
+            Drag and drop the <code>.book.html</code> to <strong>Scan</strong> page
+          </li>
+          <li>
+            Choose model and language, customize additional context and name translation.
+            <ul>
+              <li>Gemini Flash lite is enough for special quest</li>
+              <li>Main quest may benefit from Gemini Flash</li>
+            </ul>
+          </li>
+          <li>
+            Translate it
+            <ul>
+              <li>Each API call can take a minute; one chapter is about 2~3 minutes</li>
+            </ul>
+          </li>
+          <li>
+            <strong>Review</strong> and edit as necessary
+            <ul>
+              <li>Edit each line manually</li>
+              <li>Shift continuos lines up or down</li>
+              <li>Send lines for retranslate with different model</li>
+            </ul>
+          </li>
+          <li>
+            Export file in <strong>Library</strong> tab
+            <ul>
+              <li>Export <code>.tl.json</code> to share work with others</li>
+              <li>Export <code>.bilingual.html</code> for optimized reading experience</li>
+            </ul>
+          </li>
+        </ol>
+        <div class="row help-dialog-footer">
+          <span class="spacer" />
+          <button onClick={() => helpDialogRef.current?.close()}>Got it</button>
+        </div>
+      </dialog>
 
       <dialog
         class="meta-warning"
