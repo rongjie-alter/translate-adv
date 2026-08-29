@@ -60,14 +60,9 @@ export function App() {
 
   const go = useCallback(
     (v: View) => {
-      const home = translation.running ? "translate" : "review";
-      if (busy && v !== home) {
-        const ok = confirm("A translation is running. Leave this screen? It will keep running.");
-        if (!ok) return;
-      }
       store.setView(v);
     },
-    [store, translation.running, busy],
+    [store],
   );
 
   if (!store.ready) return <div class="loading">Loading…</div>;
