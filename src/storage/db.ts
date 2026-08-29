@@ -34,6 +34,8 @@ export interface Settings {
   calibration: Record<string, Calibration>;
   /** Per-preset quota counters, so limits survive a reload. */
   limiter: Record<string, LimiterState>;
+  /** Global dictionary of name translations, keyed by target language then JP/canonical name. */
+  dictionary?: Partial<Record<Lang, Record<string, string>>>;
 }
 
 export interface SourceRecord {
@@ -78,6 +80,11 @@ export function defaultSettings(): Settings {
     chunkInputTokens: 0,
     calibration: {},
     limiter: {},
+    dictionary: {
+      en: {},
+      "zh-hans": {},
+      "zh-hant": {},
+    },
   };
 }
 
@@ -131,7 +138,8 @@ export async function loadSettings(): Promise<Settings> {
   const base = defaultSettings();
   const presets = [...stored.presets];
   for (const p of base.presets) if (!presets.some((q) => q.id === p.id)) presets.push(p);
-  return { ...base, ...stored, presets };
+  const dictionary = { ...base.dictionary, ...stored.dictionary };
+  return { ...base, ...stored, presets, dictionary };
 }
 
 export async function saveSettings(s: Settings): Promise<void> {

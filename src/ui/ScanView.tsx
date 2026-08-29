@@ -128,10 +128,14 @@ export function ScanView({
             key={active.source.id + "|" + lang}
             book={active.book}
             lang={lang}
-            saved={active.source.customNames?.[lang] ?? {}}
-            onSave={(display, name) =>
-              void store.updateCustomName(active.source.id, lang, display, name)
-            }
+            saved={{
+              ...(store.settings.dictionary?.[lang] ?? {}),
+              ...(active.source.customNames?.[lang] ?? {}),
+            }}
+            onSave={(display, name) => {
+              void store.updateDictionaryName(lang, display, name);
+              void store.updateCustomName(active.source.id, lang, display, name);
+            }}
           />
 
           <table class="chapters">
@@ -265,7 +269,10 @@ export function ScanView({
     return useMemo(() => {
       if (!c) return null;
       const cal = store.calibrationFor(preset.model, lang);
-      const customNames = active?.source.customNames?.[lang] ?? {};
+      const customNames = {
+        ...(store.settings.dictionary?.[lang] ?? {}),
+        ...(active?.source.customNames?.[lang] ?? {}),
+      };
       const system =
         buildSystemPrompt(store.settings.systemPrompt, lang, chapterSpeakers(c), customNames) +
         fileNoteBlock(active?.source.note ?? "");

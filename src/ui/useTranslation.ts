@@ -143,7 +143,10 @@ export function useTranslation() {
 
     const calibration = store.calibrationFor(preset.model, lang);
     const speakers = chapterSpeakers(chapter);
-    const customNames = source.customNames?.[lang] ?? {};
+    const customNames = {
+      ...(store.settings.dictionary?.[lang] ?? {}),
+      ...(source.customNames?.[lang] ?? {}),
+    };
     const system =
       buildSystemPrompt(store.settings.systemPrompt, lang, speakers, customNames) +
       fileNoteBlock(source.note ?? "");

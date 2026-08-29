@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { DictionaryView } from "./DictionaryView";
 import { LibraryView } from "./LibraryView";
 import { ReviewView } from "./ReviewView";
 import { ScanView } from "./ScanView";
@@ -13,6 +14,7 @@ const TABS: { id: View; label: string }[] = [
   { id: "translate", label: "Translate" },
   { id: "review", label: "Review" },
   { id: "library", label: "Library" },
+  { id: "dictionary", label: "Dictionary" },
   { id: "settings", label: "Settings" },
 ];
 
@@ -123,6 +125,7 @@ export function App() {
         {store.view === "translate" && <TranslateView translation={translation} busy={busy} />}
         {store.view === "review" && <ReviewView retry={retry} busy={busy} />}
         {store.view === "library" && <LibraryView />}
+        {store.view === "dictionary" && <DictionaryView />}
         {store.view === "settings" && <SettingsView />}
       </main>
 

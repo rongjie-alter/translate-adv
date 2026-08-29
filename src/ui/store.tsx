@@ -27,7 +27,7 @@ import type { Job } from "../orchestrator/job";
 
 import { normalizeBookBase, type BookGroup } from "../storage/groups";
 
-export type View = "scan" | "translate" | "review" | "library" | "settings";
+export type View = "scan" | "translate" | "review" | "library" | "dictionary" | "settings";
 
 export interface Toast {
   id: number;
@@ -72,6 +72,11 @@ export interface Store {
   removeSource(id: string): Promise<void>;
   updateSourceNote(id: string, note: string): Promise<void>;
   updateCustomName(id: string, lang: Lang, display: string, name: string): Promise<void>;
+  updateDictionaryName(lang: Lang, display: string, name: string): Promise<void>;
+  deleteDictionaryName(lang: Lang, display: string): Promise<void>;
+  importCustomNamesToDictionary(): Promise<number>;
+  importDictionary(data: Partial<Record<Lang, Record<string, string>>>): Promise<number>;
+  clearDictionary(lang: Lang): Promise<void>;
   refreshJobs(): Promise<void>;
   saveArtifact(a: Artifact): Promise<void>;
   removeArtifact(key: string): Promise<void>;
@@ -244,6 +249,101 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     });
   }, []);
 
+  const updateDictionaryName = useCallback(async (lang: Lang, display: string, name: string) => {
+    const trimmedDisplay = display.trim();
+    const trimmedName = name.trim();
+    if (!trimmedDisplay) return;
+    setSettings((prev) => {
+      const currentDict = prev.dictionary ?? { en: {}, "zh-hans": {}, "zh-hant": {} };
+      const langMap = { ...(currentDict[lang] ?? {}) };
+      if (trimmedName) {
+        langMap[trimmedDisplay] = trimmedName;
+      } else {
+        delete langMap[trimmedDisplay];
+      }
+      const nextDict = { ...currentDict, [lang]: langMap };
+      const next = { ...prev, dictionary: nextDict };
+      void db.saveSettings(next);
+      return next;
+    });
+  }, []);
+
+  const deleteDictionaryName = useCallback(async (lang: Lang, display: string) => {
+    setSettings((prev) => {
+      const currentDict = prev.dictionary ?? { en: {}, "zh-hans": {}, "zh-hant": {} };
+      const langMap = { ...(currentDict[lang] ?? {}) };
+      delete langMap[display];
+      const nextDict = { ...currentDict, [lang]: langMap };
+      const next = { ...prev, dictionary: nextDict };
+      void db.saveSettings(next);
+      return next;
+    });
+  }, []);
+
+  const importCustomNamesToDictionary = useCallback(async (): Promise<number> => {
+    let addedCount = 0;
+    setSettings((prev) => {
+      const currentDict = JSON.parse(
+        JSON.stringify(prev.dictionary ?? { en: {}, "zh-hans": {}, "zh-hant": {} }),
+      ) as Record<Lang, Record<string, string>>;
+      for (const src of sources) {
+        if (!src.customNames) continue;
+        for (const lang of Object.keys(src.customNames) as Lang[]) {
+          const names = src.customNames[lang];
+          if (!names) continue;
+          if (!currentDict[lang]) currentDict[lang] = {};
+          for (const [disp, val] of Object.entries(names)) {
+            if (val && !currentDict[lang][disp]) {
+              currentDict[lang][disp] = val;
+              addedCount++;
+            }
+          }
+        }
+      }
+      const next = { ...prev, dictionary: currentDict };
+      void db.saveSettings(next);
+      return next;
+    });
+    return addedCount;
+  }, [sources]);
+
+  const importDictionary = useCallback(
+    async (data: Partial<Record<Lang, Record<string, string>>>): Promise<number> => {
+      let importedCount = 0;
+      setSettings((prev) => {
+        const currentDict = JSON.parse(
+          JSON.stringify(prev.dictionary ?? { en: {}, "zh-hans": {}, "zh-hant": {} }),
+        ) as Record<Lang, Record<string, string>>;
+        for (const lang of Object.keys(data) as Lang[]) {
+          const names = data[lang];
+          if (!names) continue;
+          if (!currentDict[lang]) currentDict[lang] = {};
+          for (const [disp, val] of Object.entries(names)) {
+            if (disp.trim() && val.trim()) {
+              currentDict[lang][disp.trim()] = val.trim();
+              importedCount++;
+            }
+          }
+        }
+        const next = { ...prev, dictionary: currentDict };
+        void db.saveSettings(next);
+        return next;
+      });
+      return importedCount;
+    },
+    [],
+  );
+
+  const clearDictionary = useCallback(async (lang: Lang) => {
+    setSettings((prev) => {
+      const currentDict = { ...(prev.dictionary ?? { en: {}, "zh-hans": {}, "zh-hant": {} }) };
+      currentDict[lang] = {};
+      const next = { ...prev, dictionary: currentDict };
+      void db.saveSettings(next);
+      return next;
+    });
+  }, []);
+
   const removeSource = useCallback(async (id: string) => {
     await db.deleteSource(id);
     setSources((prev) => prev.filter((s) => s.id !== id));
@@ -411,6 +511,11 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     removeSource,
     updateSourceNote,
     updateCustomName,
+    updateDictionaryName,
+    deleteDictionaryName,
+    importCustomNamesToDictionary,
+    importDictionary,
+    clearDictionary,
     refreshJobs,
     saveArtifact,
     removeArtifact,
