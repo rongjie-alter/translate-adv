@@ -21,6 +21,7 @@ import {
   type ShiftDirection,
 } from "../storage/exchange";
 import { normalizeBookBase } from "../storage/groups";
+import { FindReplacePanel } from "./FindReplaceDialog";
 import { ReviewMarker, ReviewUnit, type Row } from "./ReviewUnit";
 import { useStore } from "./store";
 import type { Proposal, useRetranslate } from "./useRetranslate";
@@ -49,6 +50,7 @@ export function ReviewView({
   const [hint, setHint] = useState("");
   const anchor = useRef<number | null>(null);
   const [shiftDraft, setShiftDraft] = useState<ShiftDraft | null>(null);
+  const findReplaceRef = useRef<HTMLDialogElement>(null);
 
   // Which line's translation is open for manual edit, and which lines were touched
   // (manually or via an accepted retranslate) this session — both reset on a chapter switch.
@@ -308,6 +310,9 @@ export function ReviewView({
             >
               Clear
             </button>
+            <button onClick={() => findReplaceRef.current?.showModal()} disabled={!!shiftDraft}>
+              Find & Replace…
+            </button>
           </div>
         ) : null}
       </div>
@@ -366,6 +371,26 @@ export function ReviewView({
           />
         </>
       )}
+
+      <dialog
+        class="help-dialog fr-dialog"
+        ref={findReplaceRef}
+        onClick={(e) => {
+          if (findReplaceRef.current && e.target === findReplaceRef.current) {
+            findReplaceRef.current.close();
+          }
+        }}
+      >
+        {persistedArtifact ? (
+          <FindReplacePanel
+            key={artifactKey(persistedArtifact)}
+            artifact={persistedArtifact}
+            rows={rows}
+            onApplied={(ids) => setEditedIds((prev) => new Set([...prev, ...ids]))}
+            onClose={() => findReplaceRef.current?.close()}
+          />
+        ) : null}
+      </dialog>
     </section>
   );
 }
