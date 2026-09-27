@@ -190,6 +190,14 @@ progress { width: 100%; height: 0.6rem; }
 
 .review { display: flex; flex-direction: column; }
 
+@media (max-width: 62rem) {
+  /* Reflow away from the docked panel so sticky .rv-toolbar/.rv-bar content
+     (e.g. right-aligned Shift buttons) never ends up hidden underneath it. */
+  .review.rv-panel-open {
+    margin-right: min(24rem, 90vw);
+  }
+}
+
 .rv-toolbar {
   position: sticky;
   top: 3.1rem;
@@ -293,7 +301,7 @@ progress { width: 100%; height: 0.6rem; }
 }
 .rv-bar .row:last-child { margin-bottom: 0; }
 .rv-bar .count { font-weight: 600; font-variant-numeric: tabular-nums; }
-.rv-bar .est { color: var(--muted); font-size: 0.85rem; }
+.rv-bar .est, .rv-retranslate-panel .est { color: var(--muted); font-size: 0.85rem; }
 .rv-bar .hint { margin: 0.25rem 0 0; }
 .rv-hint { flex: 1 1 18rem; }
 .rv-shift-controls { margin-bottom: 0.35rem; }
@@ -491,6 +499,30 @@ progress { width: 100%; height: 0.6rem; }
   width: 92vw;
   max-height: 85vh;
   overflow: auto;
+}
+
+/* Non-modal, docked right — unlike other .help-dialog uses, this is a plain
+   element (not a native <dialog>), so the row list stays clickable while it's open. */
+.rv-retranslate-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(24rem, 90vw);
+  max-width: none;
+  border: none;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.1);
+  z-index: 6;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.rv-retranslate-panel textarea.rv-note {
+  min-height: 6rem;
+  resize: vertical;
+  margin-bottom: 0.75rem;
 }
 
 /* ── Dictionary Screen ───────────────────────────────────────────────────── */

@@ -56,11 +56,18 @@ export function ReviewView({
   // (manually or via an accepted retranslate) this session — both reset on a chapter switch.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editedIds, setEditedIds] = useState<ReadonlySet<string>>(new Set());
+  const [retranslateOpen, setRetranslateOpen] = useState(false);
   useEffect(() => {
     setEditingId(null);
     setEditedIds(new Set());
     setShiftDraft(null);
+    setRetranslateOpen(false);
   }, [store.reviewKey]);
+
+  // Shifting and retranslating a selection are mutually exclusive workflows.
+  useEffect(() => {
+    if (shiftDraft) setRetranslateOpen(false);
+  }, [shiftDraft]);
 
   // Always re-derived by key: a Library delete or a folder-sync merge can pull the
   // artifact out from under this screen mid-session.
@@ -239,6 +246,11 @@ export function ReviewView({
     store.toast(`${texts.size} line${texts.size === 1 ? "" : "s"} shifted and saved.`);
   }, [persistedArtifact, setSelection, shiftDraft, store]);
 
+  const closeRetranslate = useCallback(() => {
+    if (hint.trim() && !window.confirm("Discard your note?")) return;
+    setRetranslateOpen(false);
+  }, [hint]);
+
   if (!store.artifacts.length) {
     return (
       <section class="review">
@@ -250,7 +262,7 @@ export function ReviewView({
   }
 
   return (
-    <section class="review">
+    <section class={`review${retranslateOpen ? " rv-panel-open" : ""}`}>
       <div class="rv-toolbar">
         <div class="row">
           <select
@@ -356,21 +368,32 @@ export function ReviewView({
             artifact={artifact}
             shiftDraft={shiftDraft}
             retry={retry}
-            busy={busy}
             selectedIds={selectedIds}
             pendingCount={pendingIds.size}
-            preset={presetId}
-            onPreset={setPresetId}
-            hint={hint}
-            onHint={setHint}
-            estimate={estimate}
             onApplied={(ids) => setEditedIds((prev) => new Set([...prev, ...ids]))}
             onShift={shift}
             onConfirmShift={confirmShift}
             onCancelShift={cancelShift}
+            onOpenRetranslate={() => setRetranslateOpen(true)}
           />
         </>
       )}
+
+      {retranslateOpen && persistedArtifact ? (
+        <RetranslatePanel
+          artifact={persistedArtifact}
+          selectedIds={selectedIds}
+          preset={presetId}
+          onPreset={setPresetId}
+          hint={hint}
+          onHint={setHint}
+          estimate={estimate}
+          busy={busy}
+          retry={retry}
+          onClose={closeRetranslate}
+          onSend={() => setRetranslateOpen(false)}
+        />
+      ) : null}
 
       <dialog
         class="help-dialog fr-dialog"
@@ -399,47 +422,30 @@ function ReviewBar({
   artifact,
   shiftDraft,
   retry,
-  busy,
   selectedIds,
   pendingCount,
-  preset,
-  onPreset,
-  hint,
-  onHint,
-  estimate,
   onApplied,
   onShift,
   onConfirmShift,
   onCancelShift,
+  onOpenRetranslate,
 }: {
   artifact: Artifact;
   shiftDraft: ShiftDraft | null;
   retry: ReturnType<typeof useRetranslate>;
-  busy: boolean;
   selectedIds: string[];
   pendingCount: number;
-  preset: string;
-  onPreset: (id: string) => void;
-  hint: string;
-  onHint: (s: string) => void;
-  estimate: ReturnType<ReturnType<typeof useRetranslate>["estimate"]>;
   onApplied: (uids: string[]) => void;
   onShift: (direction: ShiftDirection) => void;
   onConfirmShift: () => void;
   onCancelShift: () => void;
+  onOpenRetranslate: () => void;
 }) {
-  const store = useStore();
   const s = retry.state;
-  const chosen = store.settings.presets.find((p) => p.id === preset) ?? store.activePreset();
 
   if (shiftDraft) {
     return (
       <div class="rv-bar shift pending">
-        <ShiftControls
-          artifact={artifact}
-          selectedIds={selectedIds}
-          onShift={onShift}
-        />
         <div class="row">
           <span class="rv-pending-label">
             {pendingCount} unsaved line{pendingCount === 1 ? "" : "s"}
@@ -450,7 +456,12 @@ function ReviewBar({
             Confirm
           </button>
         </div>
-        <p class="hint">Changes stay in this preview until you confirm or cancel.</p>
+        <ShiftControls
+          artifact={artifact}
+          selectedIds={selectedIds}
+          onShift={onShift}
+          onOpenRetranslate={onOpenRetranslate}
+        />
       </div>
     );
   }
@@ -547,31 +558,60 @@ function ReviewBar({
     );
   }
 
+  if (!selectedIds.length) return null;
+
+  return (
+    <div class="rv-bar">
+      <ShiftControls artifact={artifact} selectedIds={selectedIds} onShift={onShift} onOpenRetranslate={onOpenRetranslate} />
+    </div>
+  );
+}
+
+/**
+ * Docked, non-modal — the row list must stay clickable while this is open so the
+ * user can keep adjusting the selection right up until Send.
+ */
+function RetranslatePanel({
+  artifact,
+  selectedIds,
+  preset,
+  onPreset,
+  hint,
+  onHint,
+  estimate,
+  busy,
+  retry,
+  onClose,
+  onSend,
+}: {
+  artifact: Artifact;
+  selectedIds: string[];
+  preset: string;
+  onPreset: (id: string) => void;
+  hint: string;
+  onHint: (s: string) => void;
+  estimate: ReturnType<ReturnType<typeof useRetranslate>["estimate"]>;
+  busy: boolean;
+  retry: ReturnType<typeof useRetranslate>;
+  onClose: () => void;
+  onSend: () => void;
+}) {
+  const store = useStore();
+  const chosen = store.settings.presets.find((p) => p.id === preset) ?? store.activePreset();
   const used = store.settings.limiter[chosen.id]?.dayRequests ?? 0;
   const left = chosen.limits.rpd ? chosen.limits.rpd - used : 0;
 
   return (
-    <div class="rv-bar">
-      <div class="row">
-        <span class="count">
-          {selectedIds.length
-            ? `${selectedIds.length} line${selectedIds.length === 1 ? "" : "s"} selected`
-            : "No lines selected"}
-        </span>
-        {estimate ? (
-          <span class="est">
-            {estimate.calls} call{estimate.calls === 1 ? "" : "s"} · ~
-            {estimate.inputTokens.toLocaleString()} in / ~{estimate.outputTokens.toLocaleString()} out
-            {" · "}
-            {estimate.contextLines} context line{estimate.contextLines === 1 ? "" : "s"}
-            {chosen.limits.rpd ? ` · ${left} of ${chosen.limits.rpd} requests left today` : ""}
-          </span>
-        ) : null}
+    <aside class="help-dialog rv-retranslate-panel">
+      <div class="help-dialog-header">
+        <h2>
+          Retranslate {selectedIds.length} line{selectedIds.length === 1 ? "" : "s"}
+        </h2>
+        <button class="help-dialog-close" onClick={onClose}>
+          ✕
+        </button>
       </div>
-      <ShiftControls artifact={artifact} selectedIds={selectedIds} onShift={onShift} />
-      {!selectedIds.length ? (
-        <p class="hint">Select a continuous range of lines to enable shifting or retranslation.</p>
-      ) : null}
+
       <div class="row">
         <select value={preset} onChange={(e) => onPreset((e.target as HTMLSelectElement).value)}>
           {store.settings.presets.map((p) => (
@@ -580,22 +620,42 @@ function ReviewBar({
             </option>
           ))}
         </select>
-        <input
-          class="rv-hint"
-          placeholder='Optional note for these lines (e.g. "テンジン is a character name — keep it")'
-          value={hint}
-          onInput={(e) => onHint((e.target as HTMLInputElement).value)}
-        />
+      </div>
+      <textarea
+        class="rv-note"
+        rows={4}
+        placeholder='Optional note for these lines (e.g. "テンジン is a character name — keep it")'
+        value={hint}
+        onInput={(e) => onHint((e.target as HTMLTextAreaElement).value)}
+      />
+
+      {estimate ? (
+        <p class="est">
+          {estimate.calls} call{estimate.calls === 1 ? "" : "s"} · ~
+          {estimate.inputTokens.toLocaleString()} in / ~{estimate.outputTokens.toLocaleString()} out
+          {" · "}
+          {estimate.contextLines} context line{estimate.contextLines === 1 ? "" : "s"}
+          {chosen.limits.rpd ? ` · ${left} of ${chosen.limits.rpd} requests left today` : ""}
+        </p>
+      ) : null}
+      <p class="hint">Nearby lines are sent as context but are not changed.</p>
+
+      <div class="row help-dialog-footer">
+        <span class="spacer" />
+        <button onClick={onClose}>Cancel</button>
         <button
+          class="primary"
           disabled={busy || !selectedIds.length}
           title={busy ? "A translation is already running." : ""}
-          onClick={() => void retry.start(artifact, selectedIds, chosen, hint)}
+          onClick={() => {
+            void retry.start(artifact, selectedIds, chosen, hint);
+            onSend();
+          }}
         >
           Retranslate {selectedIds.length}
         </button>
       </div>
-      <p class="hint">Nearby lines are sent as context but are not changed.</p>
-    </div>
+    </aside>
   );
 }
 
@@ -603,10 +663,12 @@ function ShiftControls({
   artifact,
   selectedIds,
   onShift,
+  onOpenRetranslate,
 }: {
   artifact: Artifact;
   selectedIds: string[];
   onShift: (direction: ShiftDirection) => void;
+  onOpenRetranslate: () => void;
 }) {
   const indexes = selectedIndexes(artifact, selectedIds);
   const canShift = !!indexes;
@@ -622,6 +684,7 @@ function ShiftControls({
     <div class="row rv-shift-controls">
       <span class="hint">{guidance}</span>
       <span class="spacer" />
+      <button onClick={onOpenRetranslate}>Retranslate {selectedIds.length}</button>
       <button
         disabled={!canUp}
         title={canShift ? (canUp ? "Move selected translations up one row." : "The selection is already at the first row.") : guidance}
