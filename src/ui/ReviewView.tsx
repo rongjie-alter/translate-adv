@@ -461,6 +461,7 @@ function ReviewBar({
           selectedIds={selectedIds}
           onShift={onShift}
           onOpenRetranslate={onOpenRetranslate}
+          ongoingShift
         />
       </div>
     );
@@ -664,11 +665,13 @@ function ShiftControls({
   selectedIds,
   onShift,
   onOpenRetranslate,
+  ongoingShift = false,
 }: {
   artifact: Artifact;
   selectedIds: string[];
   onShift: (direction: ShiftDirection) => void;
   onOpenRetranslate: () => void;
+  ongoingShift?: boolean;
 }) {
   const indexes = selectedIndexes(artifact, selectedIds);
   const canShift = !!indexes;
@@ -684,7 +687,9 @@ function ShiftControls({
     <div class="row rv-shift-controls">
       <span class="hint">{guidance}</span>
       <span class="spacer" />
-      <button onClick={onOpenRetranslate}>Retranslate {selectedIds.length}</button>
+      {!ongoingShift ? (
+        <button onClick={onOpenRetranslate}>Retranslate {selectedIds.length}</button>
+      ) : null}
       <button
         disabled={!canUp}
         title={canShift ? (canUp ? "Move selected translations up one row." : "The selection is already at the first row.") : guidance}
