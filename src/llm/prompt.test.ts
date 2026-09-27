@@ -25,8 +25,8 @@ describe("glossaryBlock", () => {
     const block = glossaryBlock(speakers, "en");
     expect(block).not.toContain("  ？");
     expect(block).not.toContain("  ？？？");
-    expect(block).toContain("  タサブロウ");
-    expect(block).toContain("  男？");
+    expect(block).not.toContain("  タサブロウ");
+    expect(block).not.toContain("  男？");
   });
 
   it("handles official translated names while filtering out question mark names", () => {
@@ -63,9 +63,7 @@ describe("glossaryBlock", () => {
     const block = glossaryBlock(speakers, "en", { "タサブロウ": "Tasaburou" });
     expect(block).toContain("Use these official character names exactly:");
     expect(block).toContain("  タサブロウ = Tasaburou");
-    expect(block).toContain("Characters in this scene");
-    expect(block).toContain("  ハナコ");
-    expect(block).not.toContain("  タサブロウ\n");
+    expect(block).not.toContain("  ハナコ");
   });
 
   it("lets parser metadata win over a custom mapping", () => {
@@ -85,9 +83,8 @@ describe("glossaryBlock", () => {
       "ハナコ": "",
     });
     expect(block).not.toContain("Use these official character names exactly:");
-    expect(block).toContain("Characters in this scene");
-    expect(block).toContain("  タサブロウ");
-    expect(block).toContain("  ハナコ");
+    expect(block).not.toContain("  タサブロウ");
+    expect(block).not.toContain("  ハナコ");
   });
 
   it("uses the same custom mapping through buildSystemPrompt", () => {

@@ -76,7 +76,6 @@ export function glossaryBlock(
   if (!speakers.length) return "";
   const seen = new Set<string>();
   const official: string[] = [];
-  const rest: string[] = [];
   for (const s of speakers) {
     const display = s.nameText ?? s.jp;
     if (seen.has(display)) continue;
@@ -87,19 +86,12 @@ export function glossaryBlock(
     } else {
       const custom = customNames?.[display]?.trim();
       if (custom) official.push(`  ${display} = ${custom}`);
-      else rest.push(`  ${display}`);
     }
   }
 
   const parts: string[] = [];
   if (official.length) {
     parts.push("\nUse these official character names exactly:\n" + official.join("\n"));
-  }
-  if (rest.length) {
-    parts.push(
-      "\nCharacters in this scene (translate their names consistently throughout):\n" +
-        rest.join("\n"),
-    );
   }
   return parts.length ? parts.join("\n") + "\n" : "";
 }

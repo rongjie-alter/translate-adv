@@ -434,7 +434,7 @@ describe("buildSystemPrompt", () => {
     expect(p).toContain("Traditional Chinese");
     expect(p).not.toContain("{{targetLanguage}}");
     expect(p).toContain("火のテンジン = 天神");
-    expect(p).toContain("タサブロウ");
+    expect(p).not.toContain("タサブロウ");
   });
 
   it("uses nameText instead of the costume-suffixed jp label when present", () => {
