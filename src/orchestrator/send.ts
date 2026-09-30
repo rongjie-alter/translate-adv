@@ -136,7 +136,7 @@ export async function sendRequest(args: {
       });
       if (!(e instanceof LlmError) || !e.retryable) throw e;
       if (e.status === 429) deps.limiter.penalize(e.retryAfter ?? 30);
-      const wait = backoffMs(attempt, e.retryAfter);
+      const wait = backoffMs(attempt, e.retryAfter, e.status);
       deps.onEvent({ type: "retry", index, attempt: attempt + 1, error: e.message });
       await sleep(wait, signal);
     }

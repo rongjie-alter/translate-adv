@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { chat, extractError } from "./client";
+import { backoffMs, chat, extractError } from "./client";
 
 function fakeResponse(body: unknown, status = 200) {
   return {
@@ -145,5 +145,25 @@ describe("extractError", () => {
 
   it("falls back to raw text on non-JSON input", () => {
     expect(extractError("502 Bad Gateway")).toBe("502 Bad Gateway");
+  });
+});
+
+describe("backoffMs", () => {
+  it("backs off exponentially for ordinary transient errors", () => {
+    expect(backoffMs(0, undefined, 500)).toBeLessThan(2_000);
+    expect(backoffMs(2, undefined, 500)).toBeGreaterThanOrEqual(4_000);
+  });
+
+  it("waits at least 30s after a 503, even on the first attempt", () => {
+    expect(backoffMs(0, undefined, 503)).toBeGreaterThanOrEqual(30_000);
+  });
+
+  it("does not let a short Retry-After undercut the 503 floor", () => {
+    expect(backoffMs(0, 2, 503)).toBe(30_000);
+  });
+
+  it("still honours a Retry-After longer than the floor", () => {
+    expect(backoffMs(0, 90, 503)).toBe(90_000);
+    expect(backoffMs(0, 5, 429)).toBe(5_000);
   });
 });

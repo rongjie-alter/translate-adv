@@ -321,7 +321,7 @@ describe("runJob", () => {
   it("retries a transient failure, then succeeds", async () => {
     let calls = 0;
     const flaky = async (req: Parameters<typeof deps.chat>[0]): Promise<ChatResponse> => {
-      if (++calls === 1) throw new LlmError("boom", 503, true);
+      if (++calls === 1) throw new LlmError("boom", 500, true);
       return echoChat()(req);
     };
     const { chunks, job, deps, events } = setup({ chat: flaky });
@@ -333,7 +333,7 @@ describe("runJob", () => {
   it("records a call event for every attempt, including a failed retry", async () => {
     let calls = 0;
     const flaky = async (req: Parameters<typeof deps.chat>[0]): Promise<ChatResponse> => {
-      if (++calls === 1) throw new LlmError("boom", 503, true);
+      if (++calls === 1) throw new LlmError("boom", 500, true);
       return echoChat()(req);
     };
     const { chunks, job, deps, events } = setup({ chat: flaky });
@@ -341,7 +341,7 @@ describe("runJob", () => {
     const callEvents = events.filter((e) => e.type === "call");
     expect(callEvents.length).toBeGreaterThanOrEqual(chunks.length + 1);
     const failed = callEvents.find((e) => !e.ok);
-    expect(failed).toMatchObject({ kind: "initial", ok: false, status: 503, error: "boom" });
+    expect(failed).toMatchObject({ kind: "initial", ok: false, status: 500, error: "boom" });
     const succeeded = callEvents.filter((e) => e.ok);
     expect(succeeded.every((e) => e.kind === "initial" && e.status === 200 && e.response)).toBe(true);
   });

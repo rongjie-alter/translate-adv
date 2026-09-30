@@ -169,11 +169,18 @@ export function extractError(body: string): string | null {
   }
 }
 
-/** Exponential backoff with jitter, capped; honours a server-supplied Retry-After. */
-export function backoffMs(attempt: number, retryAfter?: number): number {
-  if (retryAfter) return retryAfter * 1000;
+/** 503 means the model is overloaded, not blipping — retrying quickly just adds load. */
+const UNAVAILABLE_MIN_WAIT_MS = 30_000;
+
+/**
+ * Exponential backoff with jitter, capped; honours a server-supplied Retry-After.
+ * A 503 waits at least {@link UNAVAILABLE_MIN_WAIT_MS}, even if Retry-After asks for less.
+ */
+export function backoffMs(attempt: number, retryAfter?: number, status?: number): number {
+  const floor = status === 503 ? UNAVAILABLE_MIN_WAIT_MS : 0;
+  if (retryAfter) return Math.max(retryAfter * 1000, floor);
   const base = Math.min(30_000, 1000 * 2 ** attempt);
-  return base + Math.random() * 500;
+  return Math.max(base, floor) + Math.random() * 500;
 }
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
