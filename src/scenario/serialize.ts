@@ -7,6 +7,7 @@
  * on a dialogue-heavy chapter, and output tokens are the scarcer resource on the
  * free tiers this app targets.
  */
+import { speakerNames, srcLeadsWithName, stripSelectMarker, stripSpeakerPrefix } from "./cleanup";
 import type { LabelMap } from "./labels";
 import {
   isTranslatable,
@@ -26,6 +27,10 @@ export interface WireLine {
   /** Source text, kept so a repair pass can re-ask for just these lines. */
   src: string;
   hadSpeaker: boolean;
+  /** The label alias a `select` line was sent with; undefined for every other kind. */
+  alias?: string;
+  /** Every name the speaker goes by, for stripping an echoed `Name：` from the reply. */
+  speakerNames?: string[];
 }
 
 export interface WireChunk {
@@ -76,8 +81,16 @@ function renderPrefix(node: TranslatableNode, labels: LabelMap): string {
   return "";
 }
 
-function toWireLine(node: TranslatableNode, n: number): WireLine {
-  return { n, uid: node.uid, src: node.src, hadSpeaker: node.kind === "text" && !!node.speaker };
+function toWireLine(node: TranslatableNode, n: number, labels: LabelMap): WireLine {
+  const line: WireLine = {
+    n,
+    uid: node.uid,
+    src: node.src,
+    hadSpeaker: node.kind === "text" && !!node.speaker,
+  };
+  if (node.kind === "select") line.alias = labels.alias(node.to);
+  if (node.kind === "text" && node.speaker) line.speakerNames = speakerNames(node.speaker);
+  return line;
 }
 
 export function serializeChunk(nodes: SceneNode[], opts: SerializeOptions): WireChunk {
@@ -90,7 +103,7 @@ export function serializeChunk(nodes: SceneNode[], opts: SerializeOptions): Wire
     if (isTranslatable(node)) {
       const n = lines.length + 1;
       out.push(`${n} ${renderPrefix(node, opts.labels)}${node.src}`);
-      lines.push(toWireLine(node, n));
+      lines.push(toWireLine(node, n, opts.labels));
     } else {
       out.push(renderStructure(node, opts.labels));
     }
@@ -160,7 +173,7 @@ export function serializeSelection(
         case "target": {
           const n = lines.length + 1;
           out.push(`${n} ${renderPrefix(item.node, opts.labels)}${item.node.src}`);
-          lines.push(toWireLine(item.node, n));
+          lines.push(toWireLine(item.node, n, opts.labels));
           break;
         }
       }
@@ -182,7 +195,6 @@ export interface ParseResult {
 const ID_LINE = /^(\d+)[ \t.:)]\s*(.*)$/;
 const FENCE = /^\s*```.*$/;
 const STRUCTURE = /^\s*(==|=>|\?|~)/;
-const ECHOED_SPEAKER = /^([^:：]{1,24})[:：]\s+(.+)$/;
 /**
  * Reasoning models (e.g. Gemma) sometimes emit a thinking block with no newline
  * before the first numbered line, so it would otherwise swallow line 1 whole.
@@ -222,14 +234,17 @@ export function parseResponse(raw: string, lines: WireLine[]): ParseResult {
 }
 
 /**
- * Models sometimes echo the speaker name back despite the instruction. Strip it,
- * but only when the source line did not itself begin with a `name:` construct.
+ * Models echo the `>alias` of a branch option or the `Name：` of a speaker back, and
+ * the prompt deliberately does not fight it (see `cleanup.ts`). Strip it here. An
+ * unrecognised prefix is only taken on trust when the source line does not itself
+ * open with a `name：` construct; the speaker's own name is always safe to remove.
  */
 function clean(text: string, line: WireLine): string {
-  let t = text.trim();
-  if (line.hadSpeaker && !ECHOED_SPEAKER.test(line.src)) {
-    const m = ECHOED_SPEAKER.exec(t);
-    if (m) t = m[2].trim();
+  const t = text.trim();
+  if (line.alias !== undefined) return stripSelectMarker(t, line.alias).trim();
+  if (line.hadSpeaker) {
+    const loose = !srcLeadsWithName(line.src);
+    return stripSpeakerPrefix(t, line.speakerNames ?? [], { loose }).trim();
   }
   return t;
 }

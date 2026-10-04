@@ -66,6 +66,16 @@ parses the reply. `mock_server.py` mimics it. **Changing the format means changi
 the format rules in `DEFAULT_SYSTEM_PROMPT` are load-bearing — the Settings screen lets users edit
 that prompt, which is why it warns them.
 
+Models echo the `>alias` of a branch option and the `Name：` of a speaker back however the prompt
+is worded, and every stored echo is replayed as `~` context, teaching the next chunk to do it
+too. So the prompt does **not** forbid either; `scenario/cleanup.ts` strips them mechanically —
+per line in `parseResponse` (where the real alias and the speaker's names are on the `WireLine`),
+and over whole artifacts in `parseArtifact`/`buildArtifact` (`cleanUnits`) to repair older files.
+It must stay idempotent, since clean text passes through it on every import. A prefix is removed
+only if it matches a name the speaker is known by, is a prefix learned from a majority of that
+speaker's own lines, or (parse time only) looks like a bare name. Match each colon in turn: a
+speaker name can itself contain one (`SYSTEM：DEUS`), and CJK output uses `：` with no space after.
+
 Structure is sent as context but never echoed back; that roughly halves output tokens, which are
 the binding constraint on the free tiers this targets. Labels are shortened to short aliases
 (`labels.ts`) before sending, because `quest_evMain_touroumatsuri2026_0_a_alt1` is pure cost.
