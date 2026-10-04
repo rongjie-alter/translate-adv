@@ -7,8 +7,7 @@
  * up front and repeated as the last line, which is where instruction-following is
  * strongest.
  */
-import { LANG_LABEL, type Lang, type Speaker } from "../scenario/model";
-import { speakerName } from "../scenario/serialize";
+import { LANG_LABEL, type GlossaryEntry, type Lang } from "../scenario/model";
 
 export const PROMPT_LANG_LABEL: Record<Lang, string> = {
   en: "English",
@@ -51,49 +50,33 @@ Output rules:
 export function buildSystemPrompt(
   template: string,
   lang: Lang,
-  speakers: Speaker[],
-  customNames?: Record<string, string>,
+  glossary: GlossaryEntry[],
 ): string {
   return template
     .replace(/\{\{targetLanguage\}\}/g, PROMPT_LANG_LABEL[lang] ?? LANG_LABEL[lang])
-    .replace(/\{\{glossary\}\}/g, glossaryBlock(speakers, lang, customNames));
+    .replace(/\{\{glossary\}\}/g, glossaryBlock(glossary));
 }
 
 /**
- * Character names, sent once per chunk instead of being re-derived per line.
- * Names sourced from `common.chapter.json` (via `parse.py --tl_meta`) are marked as
- * official so the model does not "improve" them.
- *
- * `customNames` maps canonical display names (the same key used in `SourceRecord.customNames`)
- * to a user-supplied translation. Entries here are treated as official only when the
- * speaker has no parser-provided translation for `lang`.
+ * Names and terms, sent once per chunk instead of being re-derived per line.
+ * Entries come from `buildGlossary`: official ones (speakers and terms the game's own
+ * tables translate) and the user's. The model must not "improve" either, so they share
+ * one heading.
  */
-export function glossaryBlock(
-  speakers: Speaker[],
-  lang: Lang,
-  customNames?: Record<string, string>,
-): string {
-  if (!speakers.length) return "";
-  const seen = new Set<string>();
-  const official: string[] = [];
-  for (const s of speakers) {
-    const display = s.nameText ?? s.jp;
-    if (seen.has(display)) continue;
-    seen.add(display);
-    if (!display.trim() || /^[？?]+$/.test(display.trim())) continue;
-    if (s.tl?.[lang]) {
-      official.push(`  ${display} = ${speakerName(s, lang)}`);
-    } else {
-      const custom = customNames?.[display]?.trim();
-      if (custom) official.push(`  ${display} = ${custom}`);
-    }
-  }
+export function glossaryBlock(glossary: GlossaryEntry[]): string {
+  if (!glossary.length) return "";
+  const lines = glossary.map((g) => `  ${g.jp} = ${g.tl}`);
+  return "\nUse these official names and terms exactly:\n" + lines.join("\n") + "\n";
+}
 
-  const parts: string[] = [];
-  if (official.length) {
-    parts.push("\nUse these official character names exactly:\n" + official.join("\n"));
-  }
-  return parts.length ? parts.join("\n") + "\n" : "";
+/** The complete system prompt for a bulk run: template, glossary, then the per-file note. */
+export function assembleSystemPrompt(args: {
+  template: string;
+  lang: Lang;
+  glossary: GlossaryEntry[];
+  fileNote?: string;
+}): string {
+  return buildSystemPrompt(args.template, args.lang, args.glossary) + fileNoteBlock(args.fileNote ?? "");
 }
 
 export const REPAIR_INSTRUCTION =

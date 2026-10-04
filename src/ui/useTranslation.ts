@@ -8,13 +8,13 @@ import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { estimateTokens } from "../llm/estimate";
 import { RateLimiter, emptyState } from "../llm/limiter";
 import type { Preset } from "../llm/presets";
-import { buildSystemPrompt, fileNoteBlock } from "../llm/prompt";
+import { assembleSystemPrompt } from "../llm/prompt";
 import { chunkNodes, type Chunk } from "../orchestrator/chunker";
 import { isComplete, jobId, type Job, type JobChunk } from "../orchestrator/job";
 import { runJob, type RunEvent } from "../orchestrator/runner";
 import { makeLabelMap } from "../scenario/labels";
 import { isTranslatable, type Book, type Chapter, type Lang } from "../scenario/model";
-import { chapterSpeakers } from "../scenario/parseHtml";
+import { chapterGlossary } from "../scenario/glossary";
 import * as db from "../storage/db";
 import type { SourceRecord } from "../storage/db";
 import { buildArtifact } from "../storage/exchange";
@@ -142,14 +142,17 @@ export function useTranslation() {
     }
 
     const calibration = store.calibrationFor(preset.model, lang);
-    const speakers = chapterSpeakers(chapter);
-    const customNames = {
-      ...(store.settings.dictionary?.[lang] ?? {}),
-      ...(source.customNames?.[lang] ?? {}),
-    };
-    const system =
-      buildSystemPrompt(store.settings.systemPrompt, lang, speakers, customNames) +
-      fileNoteBlock(source.note ?? "");
+    const glossary = chapterGlossary(book, chapter, lang, {
+      dictionary: store.settings.dictionary?.[lang],
+      customNames: source.customNames?.[lang],
+      excluded: source.excludedTerms,
+    });
+    const system = assembleSystemPrompt({
+      template: store.settings.systemPrompt,
+      lang,
+      glossary,
+      fileNote: source.note,
+    });
     const maxInputTokens = store.settings.chunkInputTokens || preset.limits.maxInputTokens;
     const chunks = chunksFor(chapter, {
       maxInputTokens,
@@ -206,8 +209,7 @@ export function useTranslation() {
           reasoningEffort: preset.reasoningEffort,
           systemPromptTemplate: store.settings.systemPrompt,
           fileNote: source.note,
-          speakers,
-          customNames,
+          glossary,
           labels: makeLabelMap(
             chapter.nodes.flatMap((n) =>
               n.kind === "label" ? [n.id] : n.kind === "jump" ? [n.to] : [],
@@ -245,7 +247,11 @@ export function useTranslation() {
           model: preset.model,
           translations,
           generatedAt: Date.now(),
-          customNames,
+          customNames: {
+            ...(store.settings.dictionary?.[lang] ?? {}),
+            ...(source.customNames?.[lang] ?? {}),
+          },
+          glossary,
         }),
       );
 

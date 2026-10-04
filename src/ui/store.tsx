@@ -72,6 +72,8 @@ export interface Store {
   removeSource(id: string): Promise<void>;
   updateSourceNote(id: string, note: string): Promise<void>;
   updateCustomName(id: string, lang: Lang, display: string, name: string): Promise<void>;
+  /** Switch a glossary term off (or back on) for one file. */
+  setTermExcluded(id: string, jp: string, excluded: boolean): Promise<void>;
   updateDictionaryName(lang: Lang, display: string, name: string): Promise<void>;
   deleteDictionaryName(lang: Lang, display: string): Promise<void>;
   importCustomNamesToDictionary(): Promise<number>;
@@ -229,6 +231,17 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
       const rec = prev.find((s) => s.id === id);
       if (!rec) return prev;
       const next = { ...rec, note };
+      void db.putSource(next);
+      return prev.map((s) => (s.id === id ? next : s));
+    });
+  }, []);
+
+  const setTermExcluded = useCallback(async (id: string, jp: string, excluded: boolean) => {
+    setSources((prev) => {
+      const rec = prev.find((s) => s.id === id);
+      if (!rec) return prev;
+      const rest = (rec.excludedTerms ?? []).filter((t) => t !== jp);
+      const next = { ...rec, excludedTerms: excluded ? [...rest, jp] : rest };
       void db.putSource(next);
       return prev.map((s) => (s.id === id ? next : s));
     });
@@ -511,6 +524,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     removeSource,
     updateSourceNote,
     updateCustomName,
+    setTermExcluded,
     updateDictionaryName,
     deleteDictionaryName,
     importCustomNamesToDictionary,

@@ -5,12 +5,13 @@
  * "this chapter is 14 calls and most of today's quota" *before* spending it.
  */
 import { useMemo, useRef, useState } from "preact/hooks";
-import { estimateJob } from "../llm/estimate";
-import { buildSystemPrompt, fileNoteBlock } from "../llm/prompt";
+import { estimateJob, estimateTokens } from "../llm/estimate";
+import { assembleSystemPrompt, glossaryBlock } from "../llm/prompt";
 import { serializeChunk } from "../scenario/serialize";
 import { makeLabelMap } from "../scenario/labels";
-import { LANGS, LANG_LABEL, type Chapter } from "../scenario/model";
-import { chapterSpeakers, scanUnknownNames } from "../scenario/parseHtml";
+import { LANGS, LANG_LABEL, type Chapter, type GlossaryEntry } from "../scenario/model";
+import { chapterGlossary } from "../scenario/glossary";
+import { scanUnknownNames } from "../scenario/parseHtml";
 import { jobId, jobProgress } from "../orchestrator/job";
 import { artifactKey } from "../storage/exchange";
 import { useActiveBook, useStore } from "./store";
@@ -32,7 +33,8 @@ export function ScanView({
   const preset = store.settings.presets.find((p) => p.id === presetId) ?? store.activePreset();
 
   const chapter = active?.book.chapters.find((c) => c.name === selected) ?? null;
-  const estimate = useEstimate(chapter);
+  const glossary = useGlossary(chapter);
+  const estimate = useEstimate(chapter, glossary);
 
   return (
     <section class="scan">
@@ -247,6 +249,22 @@ export function ScanView({
               ) : null}
             </div>
           ) : null}
+
+          {chapter ? (
+            <GlossaryPanel
+              key={active.source.id + "|" + chapter.name + "|" + lang}
+              chapter={chapter.name}
+              glossary={glossary}
+              charsPerToken={store.calibrationFor(preset.model, lang).charsPerToken}
+              hasTerms={!!active.book.terms}
+              excluded={active.source.excludedTerms ?? []}
+              onExclude={(jp, off) => void store.setTermExcluded(active.source.id, jp, off)}
+              onAdd={(jp, tl) => {
+                void store.updateDictionaryName(lang, jp, tl);
+                void store.updateCustomName(active.source.id, lang, jp, tl);
+              }}
+            />
+          ) : null}
         </>
       )}
     </section>
@@ -265,17 +283,28 @@ export function ScanView({
     return { kind: "none", text: "—" };
   }
 
-  function useEstimate(c: Chapter | null) {
+  /** What `translation.start` will send as the glossary for this chapter. */
+  function useGlossary(c: Chapter | null): GlossaryEntry[] {
+    return useMemo(() => {
+      if (!c || !active) return [];
+      return chapterGlossary(active.book, c, lang, {
+        dictionary: store.settings.dictionary?.[lang],
+        customNames: active.source.customNames?.[lang],
+        excluded: active.source.excludedTerms,
+      });
+    }, [c, lang, active?.book, active?.source.customNames, active?.source.excludedTerms, store.settings.dictionary]);
+  }
+
+  function useEstimate(c: Chapter | null, glossary: GlossaryEntry[]) {
     return useMemo(() => {
       if (!c) return null;
       const cal = store.calibrationFor(preset.model, lang);
-      const customNames = {
-        ...(store.settings.dictionary?.[lang] ?? {}),
-        ...(active?.source.customNames?.[lang] ?? {}),
-      };
-      const system =
-        buildSystemPrompt(store.settings.systemPrompt, lang, chapterSpeakers(c), customNames) +
-        fileNoteBlock(active?.source.note ?? "");
+      const system = assembleSystemPrompt({
+        template: store.settings.systemPrompt,
+        lang,
+        glossary,
+        fileNote: active?.source.note,
+      });
       const chunks = chunksFor(c, {
         maxInputTokens: store.settings.chunkInputTokens || preset.limits.maxInputTokens,
         maxOutputTokens: preset.limits.maxOutputTokens,
@@ -299,8 +328,108 @@ export function ScanView({
         }),
         samples: cal.samples,
       };
-    }, [c, lang, preset, store.settings, store.artifacts, active?.source.note, active?.source.customNames]);
+    }, [c, lang, preset, store.settings, store.artifacts, active?.source.note, glossary]);
   }
+}
+
+const SOURCE_LABEL: Record<GlossaryEntry["source"], string> = {
+  speaker: "speaker",
+  official: "official",
+  custom: "yours",
+};
+
+/**
+ * The names and terms that will be sent with this chapter, so the user can see what
+ * the prompt costs and switch off a bad match. Also the quickest way to add a term:
+ * it lands in the Dictionary and is sent wherever the Japanese appears.
+ */
+function GlossaryPanel({
+  chapter,
+  glossary,
+  charsPerToken,
+  hasTerms,
+  excluded,
+  onExclude,
+  onAdd,
+}: {
+  chapter: string;
+  glossary: GlossaryEntry[];
+  charsPerToken: number;
+  hasTerms: boolean;
+  excluded: string[];
+  onExclude: (jp: string, off: boolean) => void;
+  onAdd: (jp: string, tl: string) => void;
+}) {
+  const [jp, setJp] = useState("");
+  const [tl, setTl] = useState("");
+  const tokens = estimateTokens(glossaryBlock(glossary), charsPerToken);
+  return (
+    <details class="glossary-panel" open>
+      <summary>
+        Glossary for {chapter} — {glossary.length} term{glossary.length === 1 ? "" : "s"}, ~{tokens} tokens
+        per request
+      </summary>
+      <p class="hint">
+        Names that speak in this chapter or are mentioned in its text, plus your Dictionary entries that
+        appear in it. Uncheck a term to stop sending it for this file.
+        {hasTerms ? null : (
+          <>
+            {" "}
+            This file has no <code>#term-meta</code>, so official names of characters who never speak
+            are missing — regenerate it with the current <code>parse.py</code> to include them.
+          </>
+        )}
+      </p>
+      <ul class="glossary-list">
+        {glossary.map((g) => (
+          <li key={g.jp}>
+            <label>
+              <input type="checkbox" checked onChange={() => onExclude(g.jp, true)} />
+              <span class="jp">{g.jp}</span> = <span class="tl">{g.tl}</span>
+            </label>
+            <span class="name-badge">
+              {SOURCE_LABEL[g.source]} · {g.count}×
+            </span>
+          </li>
+        ))}
+        {excluded.map((e) => (
+          <li key={e} class="off">
+            <label>
+              <input type="checkbox" checked={false} onChange={() => onExclude(e, false)} />
+              <span class="jp">{e}</span> <em>(off)</em>
+            </label>
+          </li>
+        ))}
+      </ul>
+      <form
+        class="glossary-add"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!jp.trim() || !tl.trim()) return;
+          onAdd(jp.trim(), tl.trim());
+          setJp("");
+          setTl("");
+        }}
+      >
+        <input
+          type="text"
+          placeholder="日本語 (e.g. パラレルフライト)"
+          value={jp}
+          onInput={(e) => setJp((e.target as HTMLInputElement).value)}
+        />
+        <span class="name-eq">=</span>
+        <input
+          type="text"
+          placeholder="translation"
+          value={tl}
+          onInput={(e) => setTl((e.target as HTMLInputElement).value)}
+        />
+        <button type="submit" disabled={!jp.trim() || !tl.trim()}>
+          Add term
+        </button>
+      </form>
+    </details>
+  );
 }
 
 /**

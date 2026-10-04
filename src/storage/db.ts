@@ -52,6 +52,8 @@ export interface SourceRecord {
    * one mapping. Existing records without this field are treated as having no mappings.
    */
   customNames?: Partial<Record<Lang, Record<string, string>>>;
+  /** Glossary keys the user switched off for this file (they are never sent). */
+  excludedTerms?: string[];
 }
 
 export interface UnitRecord {

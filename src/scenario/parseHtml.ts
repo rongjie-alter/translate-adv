@@ -11,7 +11,17 @@
  * generated files keep working.
  */
 import { toCompact } from "./inline";
-import { hash8, hashFile, LANGS, type Book, type Chapter, type Lang, type SceneNode, type Speaker } from "./model";
+import {
+  hash8,
+  hashFile,
+  LANGS,
+  type Book,
+  type Chapter,
+  type Lang,
+  type SceneNode,
+  type Speaker,
+  type TermTable,
+} from "./model";
 
 /** `火のテンジン (通常):` -> name + pose. The pose is absent under `--tl_name`. */
 const CHARA_TEXT = /^(.*?)(?:\s*\((.*)\))?\s*[:：]\s*$/;
@@ -39,6 +49,24 @@ function readCharaMeta(doc: Document): { map: Record<string, CharaMetaEntry>; pr
     return { map: JSON.parse(script.textContent), present: true };
   } catch {
     return { map: {}, present: false };
+  }
+}
+
+/** Reads `<script id="term-meta">`: official translations of terms that are not speakers. */
+function readTermMeta(doc: Document): TermTable {
+  const script = doc.getElementById("term-meta");
+  if (!script?.textContent) return {};
+  try {
+    const raw = JSON.parse(script.textContent) as TermTable;
+    const out: TermTable = {};
+    for (const [jp, per] of Object.entries(raw)) {
+      const tl: Partial<Record<Lang, string>> = {};
+      for (const lang of LANGS) if (typeof per?.[lang] === "string" && per[lang]) tl[lang] = per[lang];
+      if (Object.keys(tl).length) out[jp] = tl;
+    }
+    return out;
+  } catch {
+    return {};
   }
 }
 
@@ -146,7 +174,15 @@ export function parseBookHtml(file: string, html: string): Book {
   };
 
   walk(doc.body);
-  return { file, srcHash: hashFile(html), chapters, hasMeta, hasCharaMeta };
+  const terms = readTermMeta(doc);
+  return {
+    file,
+    srcHash: hashFile(html),
+    chapters,
+    hasMeta,
+    hasCharaMeta,
+    ...(Object.keys(terms).length ? { terms } : {}),
+  };
 }
 
 function readSpeaker(el: Element, charaMeta: Record<string, CharaMetaEntry>): Speaker | undefined {

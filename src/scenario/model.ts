@@ -108,6 +108,19 @@ export interface Chapter {
   chars: number;
 }
 
+/** Official translations of non-speaker terms, from parse.py's `#term-meta`: jp -> per-language. */
+export type TermTable = Record<string, Partial<Record<Lang, string>>>;
+
+/** One `jp = tl` line of the glossary sent in the system prompt. */
+export interface GlossaryEntry {
+  jp: string;
+  tl: string;
+  /** `speaker` speaks in this chapter; `official` comes from the game's own tables; `custom` is the user's. */
+  source: "speaker" | "official" | "custom";
+  /** Occurrences in the chapter (speaker lines included) — ranking and the Scan panel. */
+  count: number;
+}
+
 export interface Book {
   /** Original file name, e.g. `touroumatsuri2026.book.html`. Part of the artifact identity. */
   file: string;
@@ -118,6 +131,8 @@ export interface Book {
   hasMeta: boolean;
   /** True when the HTML carried the consolidated `data-chara-id` + `#chara-meta` JSON dict. */
   hasCharaMeta: boolean;
+  /** Official term translations from `#term-meta` (parse.py ≥ v4). Absent in older files. */
+  terms?: TermTable;
 }
 
 /** Node kinds that carry text needing translation. */

@@ -17,9 +17,9 @@
  * prompt, to `parseResponse` and to `mock_server.py`.
  */
 import { calibrate, estimateTokens, type Calibration } from "../llm/estimate";
-import { buildSystemPrompt, hintBlock, RETRANSLATE_INSTRUCTION } from "../llm/prompt";
+import { assembleSystemPrompt, hintBlock, RETRANSLATE_INSTRUCTION } from "../llm/prompt";
 import type { LabelMap } from "../scenario/labels";
-import { isTranslatable, type Lang, type SceneNode, type Speaker } from "../scenario/model";
+import { isTranslatable, type GlossaryEntry, type Lang, type SceneNode } from "../scenario/model";
 import {
   serializeSelection,
   SELECTION_GAP,
@@ -436,15 +436,16 @@ export type RetranslateEvent =
 
 export interface RetranslateDeps extends Omit<SendDeps, "onEvent"> {
   systemPromptTemplate: string;
-  speakers: Speaker[];
+  /** Names and terms for the artifact's text, from `buildGlossary`. */
+  glossary: GlossaryEntry[];
+  /** The file's free-text note, sent as it is on a bulk run. */
+  fileNote?: string;
   labels: LabelMap;
   calibration: Calibration;
   maxInputTokens: number;
   lang: Lang;
   /** A user's free-text note for this run only. Never written to settings. */
   hint?: string;
-  /** User-supplied custom name mappings (display → translated) for the active language. */
-  customNames?: Record<string, string>;
   options?: Partial<ContextOptions>;
   /**
    * Persist one request's worth of results before the next is sent, so an abort or
@@ -470,11 +471,11 @@ export interface RetranslateResult {
 export function retranslateSystemPrompt(
   template: string,
   lang: Lang,
-  speakers: Speaker[],
+  glossary: GlossaryEntry[],
   hint?: string,
-  customNames?: Record<string, string>,
+  fileNote?: string,
 ): string {
-  const base = buildSystemPrompt(template, lang, speakers, customNames);
+  const base = assembleSystemPrompt({ template, lang, glossary, fileNote });
   return `${base}\n\n${RETRANSLATE_INSTRUCTION}${hintBlock(hint ?? "")}`;
 }
 
@@ -486,9 +487,9 @@ export async function runRetranslate(
   const system = retranslateSystemPrompt(
     deps.systemPromptTemplate,
     deps.lang,
-    deps.speakers,
+    deps.glossary,
     deps.hint,
-    deps.customNames,
+    deps.fileNote,
   );
 
   let calibration = deps.calibration;

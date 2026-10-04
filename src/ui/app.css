@@ -647,3 +647,44 @@ progress { width: 100%; height: 0.6rem; }
   font-size: 0.8rem;
 }
 
+
+.glossary-panel {
+  margin-top: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+}
+.glossary-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.glossary-list {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  columns: 2 22rem;
+  column-gap: 1.5rem;
+}
+.glossary-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  break-inside: avoid;
+  padding: 0.1rem 0;
+}
+.glossary-list li.off {
+  color: var(--muted);
+}
+.glossary-list .jp {
+  font-weight: 600;
+}
+.glossary-add {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.glossary-add input[type="text"] {
+  flex: 1 1 12rem;
+}

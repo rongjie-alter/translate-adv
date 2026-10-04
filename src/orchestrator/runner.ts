@@ -10,8 +10,8 @@
 import type { chat } from "../llm/client";
 import { calibrate, estimateTokens, type Calibration } from "../llm/estimate";
 import type { Quota } from "../llm/limiter";
-import { buildSystemPrompt, fileNoteBlock } from "../llm/prompt";
-import type { Lang, Speaker } from "../scenario/model";
+import { assembleSystemPrompt } from "../llm/prompt";
+import type { GlossaryEntry, Lang } from "../scenario/model";
 import { serializeChunk } from "../scenario/serialize";
 import type { LabelMap } from "../scenario/labels";
 import type { Chunk } from "./chunker";
@@ -40,9 +40,8 @@ export interface RunnerDeps {
   systemPromptTemplate: string;
   /** Per-file free-text note (glossary, character context) configured on the Scan tab. */
   fileNote?: string;
-  speakers: Speaker[];
-  /** User-supplied custom name mappings (display → translated) for the active language. */
-  customNames?: Record<string, string>;
+  /** Names and terms for this chapter, from `buildGlossary`. */
+  glossary: GlossaryEntry[];
   labels: LabelMap;
   calibration: Calibration;
   /** Persist translated units for one chunk. Must resolve before the chunk is marked done. */
@@ -64,9 +63,12 @@ export async function runJob(
   deps: RunnerDeps,
   signal: AbortSignal,
 ): Promise<Job> {
-  const system =
-    buildSystemPrompt(deps.systemPromptTemplate, lang, deps.speakers, deps.customNames) +
-    fileNoteBlock(deps.fileNote ?? "");
+  const system = assembleSystemPrompt({
+    template: deps.systemPromptTemplate,
+    lang,
+    glossary: deps.glossary,
+    fileNote: deps.fileNote,
+  });
   let context: string[] = [];
   let calibration = deps.calibration;
 

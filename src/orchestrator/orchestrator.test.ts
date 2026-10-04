@@ -5,7 +5,7 @@ import { emptyState, RateLimiter } from "../llm/limiter";
 import { DEFAULT_SYSTEM_PROMPT, buildSystemPrompt } from "../llm/prompt";
 import { makeLabelMap } from "../scenario/labels";
 import { isTranslatable, type Book, type Chapter, type SceneNode } from "../scenario/model";
-import { chapterSpeakers } from "../scenario/parseHtml";
+import { chapterGlossary, speakerGlossary } from "../scenario/glossary";
 import { chunkNodes } from "./chunker";
 import { jobId, type Job } from "./job";
 import { runJob, type RunEvent } from "./runner";
@@ -226,7 +226,7 @@ describe("RateLimiter", () => {
 
 describe("runJob", () => {
   const nodes = chapter.nodes.slice(0, 120);
-  const speakers = chapterSpeakers(chapter);
+  const glossary = chapterGlossary(book, chapter, "en", { customNames: { タサブロウ: "Tasaburou" } });
   const labels = makeLabelMap(
     chapter.nodes.flatMap((n) => (n.kind === "label" ? [n.id] : n.kind === "jump" ? [n.to] : [])),
   );
@@ -263,7 +263,7 @@ describe("runJob", () => {
       model: "mock",
       maxOutputTokens: 800,
       systemPromptTemplate: DEFAULT_SYSTEM_PROMPT,
-      speakers,
+      glossary,
       labels,
       calibration: { charsPerToken: 1, outputRatio: 0.9, samples: 0 },
       saveUnits: async (_c: unknown, t: Map<string, string>) => {
@@ -420,17 +420,18 @@ describe("runJob", () => {
     const { chunks, job, deps } = setup({ chat: spy });
     await runJob(job, chunks, "en", deps, new AbortController().signal);
     expect(seen[0]).not.toContain("quest_evMain_touroumatsuri2026");
-    expect(seen[0]).toContain("タサブロウ");
+    expect(seen[0]).toContain("タサブロウ = Tasaburou");
     expect(seen[0]).toContain("English");
   });
 });
 
 describe("buildSystemPrompt", () => {
   it("substitutes the language and marks official names", () => {
-    const p = buildSystemPrompt(DEFAULT_SYSTEM_PROMPT, "zh-hant", [
-      { jp: "火のテンジン", tl: { "zh-hant": "天神" } },
-      { jp: "タサブロウ" },
-    ]);
+    const p = buildSystemPrompt(
+      DEFAULT_SYSTEM_PROMPT,
+      "zh-hant",
+      speakerGlossary([{ jp: "火のテンジン", tl: { "zh-hant": "天神" } }, { jp: "タサブロウ" }], "zh-hant"),
+    );
     expect(p).toContain("Traditional Chinese");
     expect(p).not.toContain("{{targetLanguage}}");
     expect(p).toContain("火のテンジン = 天神");
@@ -438,18 +439,27 @@ describe("buildSystemPrompt", () => {
   });
 
   it("uses nameText instead of the costume-suffixed jp label when present", () => {
-    const p = buildSystemPrompt(DEFAULT_SYSTEM_PROMPT, "en", [
-      { jp: "オニワカ法被", nameText: "オニワカ", tl: { en: "Oniwaka" } },
-    ]);
+    const p = buildSystemPrompt(
+      DEFAULT_SYSTEM_PROMPT,
+      "en",
+      speakerGlossary([{ jp: "オニワカ法被", nameText: "オニワカ", tl: { en: "Oniwaka" } }], "en"),
+    );
     expect(p).toContain("オニワカ = Oniwaka");
     expect(p).not.toContain("オニワカ法被");
   });
 
   it("dedupes glossary lines when costume variants share a nameText", () => {
-    const p = buildSystemPrompt(DEFAULT_SYSTEM_PROMPT, "en", [
-      { jp: "オニワカ法被", nameText: "オニワカ", tl: { en: "Oniwaka" } },
-      { jp: "オニワカ普段着", nameText: "オニワカ", tl: { en: "Oniwaka" } },
-    ]);
+    const p = buildSystemPrompt(
+      DEFAULT_SYSTEM_PROMPT,
+      "en",
+      speakerGlossary(
+        [
+          { jp: "オニワカ法被", nameText: "オニワカ", tl: { en: "Oniwaka" } },
+          { jp: "オニワカ普段着", nameText: "オニワカ", tl: { en: "Oniwaka" } },
+        ],
+        "en",
+      ),
+    );
     expect(p.match(/オニワカ = Oniwaka/g)).toHaveLength(1);
   });
 });

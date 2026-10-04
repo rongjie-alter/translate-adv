@@ -114,10 +114,11 @@ export function DictionaryView() {
     <section class="dictionary-view">
       <div class="dictionary-header">
         <div>
-          <h2>Global Character Dictionary</h2>
+          <h2>Global Dictionary</h2>
           <p class="hint">
-            Manage global name translations used during scanning and prompt generation.
-            Names added here are automatically shared across all books.
+            Names and special terms (e.g. パラレルフライト = Parallel Flight) shared across all books.
+            An entry is sent to the model in every chapter whose Japanese text contains it, whether
+            or not the character speaks there.
           </p>
         </div>
         <div class="dictionary-stats">
@@ -174,18 +175,18 @@ export function DictionaryView() {
       </div>
 
       <form class="dictionary-add-form" onSubmit={handleAdd}>
-        <h3>Add Name Translation ({LANG_LABEL[lang]})</h3>
+        <h3>Add Name or Term ({LANG_LABEL[lang]})</h3>
         <div class="row">
           <input
             type="text"
-            placeholder="Original Name (e.g. タサブロウ)"
+            placeholder="Japanese name or term (e.g. パラレルフライト)"
             value={newJp}
             onInput={(e) => setNewJp((e.target as HTMLInputElement).value)}
           />
           <span class="eq">=</span>
           <input
             type="text"
-            placeholder="Translated Name (e.g. Tasaburou)"
+            placeholder="Translation (e.g. Parallel Flight)"
             value={newTl}
             onInput={(e) => setNewTl((e.target as HTMLInputElement).value)}
           />

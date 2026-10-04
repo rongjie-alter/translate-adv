@@ -24,7 +24,7 @@ import {
   applyTranslations,
   artifactKey,
   artifactLabelIds,
-  artifactSpeakers,
+  artifactGlossary,
   type Artifact,
 } from "../storage/exchange";
 import { useStore } from "./store";
@@ -89,13 +89,16 @@ export function useRetranslate() {
       const sourceRec = store.sources.find(
         (s) => s.file === artifact.book && s.srcHash === artifact.srcHash,
       );
-      const customNames = sourceRec?.customNames?.[artifact.lang];
       const system = retranslateSystemPrompt(
         store.settings.systemPrompt,
         artifact.lang,
-        artifactSpeakers(artifact),
+        artifactGlossary(artifact, {
+          dictionary: store.settings.dictionary?.[artifact.lang],
+          customNames: sourceRec?.customNames?.[artifact.lang],
+          excluded: sourceRec?.excludedTerms,
+        }),
         hint,
-        customNames,
+        sourceRec?.note,
       );
       const systemTokens = estimateTokens(system, cal.charsPerToken);
       const plan = planRetranslate(
@@ -138,7 +141,6 @@ export function useRetranslate() {
       const sourceRec = store.sources.find(
         (s) => s.file === artifact.book && s.srcHash === artifact.srcHash,
       );
-      const customNames = sourceRec?.customNames?.[artifact.lang];
       setState({
         artifactKey: key,
         chapter: artifact.chapter,
@@ -178,12 +180,16 @@ export function useRetranslate() {
             reasoningEffort: preset.reasoningEffort,
             maxInputTokens: store.settings.chunkInputTokens || preset.limits.maxInputTokens,
             systemPromptTemplate: store.settings.systemPrompt,
-            speakers: artifactSpeakers(artifact),
+            glossary: artifactGlossary(artifact, {
+              dictionary: store.settings.dictionary?.[artifact.lang],
+              customNames: sourceRec?.customNames?.[artifact.lang],
+              excluded: sourceRec?.excludedTerms,
+            }),
+            fileNote: sourceRec?.note,
             labels: makeLabelMap(artifactLabelIds(artifact)),
             calibration,
             lang: artifact.lang,
             hint,
-            customNames,
             // Nothing is persisted here: the user has not accepted these yet.
             saveUnits: async () => {},
             onCalibration: (c) => {

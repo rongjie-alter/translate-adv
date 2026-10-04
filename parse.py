@@ -13,7 +13,47 @@ TL_META_LANGS = [
 ]
 
 # Bumped when the meaning of a data-* attribute changes, so the app can tell.
-TL_META_VERSION = 3
+TL_META_VERSION = 4
+
+# --- #term-meta -------------------------------------------------------------
+# Localize.xls is the game's own term table: character names, epithets and a lot of
+# noise. The web app never sees it, so parse.py embeds the entries that (a) are worth
+# a prompt line and (b) actually occur in this book's text. Mentioned-only characters
+# and special terms reach the model that way.
+#
+# Keep in step with isValuableTerm() in src/scenario/glossary.ts. User-typed
+# dictionary entries bypass that filter in the app; Localize rows do not.
+TERM_COLLECTIVE = re.compile(r'(たち|達|一同|全員|同時|そろって)$')
+TERM_COUNT = re.compile(r'[0-9０-９一二三四五六七八九十]人')
+TERM_STAGE_DIRECTION = re.compile(r'^[（(].*[）)]$')
+TERM_SYMBOLS = re.compile(r'^[？?■―ー・\s]*$')
+TERM_SHORT_KANJI = re.compile(r'^[一-鿿]{1,3}$')
+TERM_KATAKANA_NEIGHBOUR = re.compile(r'[ァ-ヶー]')
+TERM_KATAKANA_KEY = re.compile(r'^[ァ-ヶー・]+$')
+
+def isValuableTerm(key):
+  k = key.strip()
+  if len(k) < 2: return False
+  if TERM_SYMBOLS.match(k): return False       # ？？？？, ■■■■
+  if TERM_STAGE_DIRECTION.match(k): return False  # （観客）
+  if k[-1] in '？?': return False              # unknown-speaker labels
+  if TERM_COLLECTIVE.search(k): return False   # エンジェルたち, 全員
+  if TERM_COUNT.search(k): return False        # ３人, 生徒３人
+  if TERM_SHORT_KANJI.match(k): return False   # 少年, 社員: the model gets these right
+  return True
+
+def termOccurs(key, text):
+  """True if `key` appears in `text`; a katakana key must not sit inside a longer katakana word."""
+  boundary = TERM_KATAKANA_KEY.match(key)
+  start = text.find(key)
+  while start != -1:
+    end = start + len(key)
+    if not boundary or not (
+        (start > 0 and TERM_KATAKANA_NEIGHBOUR.match(text[start - 1])) or
+        (end < len(text) and TERM_KATAKANA_NEIGHBOUR.match(text[end]))):
+      return True
+    start = text.find(key, start + 1)
+  return False
 
 def escapeAttr(s):
   return s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
@@ -218,12 +258,35 @@ document.querySelector("#ruby-btn").onclick = function() {
     # official names inline on every line that character speaks.
     self.chara_ids = {}
     self.chara_meta = {}
+    self.term_text = []
 
     if self.tl_name or self.tl_meta:
       self.process_common(args.common)
 
+  TERM_SOURCE_LINE = re.compile(r'^<div class="(?:text|select|title)"')
+  TERM_STRIP_CHARA = re.compile(r'<span class="(?:chara|voice[^"]*)">.*?</span>')
+  TERM_STRIP_READING = re.compile(r'<r[tp]>.*?</r[tp]>')
+
   def write(self, s):
     self.f.write(s + '\n')
+    if self.tl_meta and self.TERM_SOURCE_LINE.match(s):
+      # Visible text only, as the web app sees it: no speaker label, readings or tags.
+      s = self.TERM_STRIP_CHARA.sub('', s)
+      s = self.TERM_STRIP_READING.sub('', s)
+      s = re.sub(r'<[^>]*>', '', s)
+      self.term_text.append(s.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&'))
+
+  def termMeta(self):
+    """Localize entries worth sending that occur in this book, as {jp: {lang: translation}}."""
+    text = '\n'.join(self.term_text)
+    out = {}
+    for key in self.translated_all["en"]:
+      if not isValuableTerm(key) or not termOccurs(key, text): continue
+      names = {code: self.translated_all[code][key]
+               for code, _ in TL_META_LANGS
+               if self.translated_all[code].get(key) and self.translated_all[code][key] != key}
+      if names: out[key] = names
+    return out
 
   def dumpHtml(self):
     with open(self.filename + self.lang["suffix"], 'w', encoding='utf-8') as f:
@@ -288,6 +351,11 @@ document.querySelector("#ruby-btn").onclick = function() {
     if self.tl_meta and self.chara_meta:
       self.write(f'<script type="application/json" id="chara-meta">'
                  f'{json.dumps(self.chara_meta, ensure_ascii=False)}</script>')
+    if self.tl_meta:
+      terms = self.termMeta()
+      if terms:
+        self.write(f'<script type="application/json" id="term-meta">'
+                   f'{json.dumps(terms, ensure_ascii=False)}</script>')
     self.write(self.FOOTER)
 
   def getName(self, s):

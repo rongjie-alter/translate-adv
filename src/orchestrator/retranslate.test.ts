@@ -8,12 +8,14 @@ import {
   applyTranslations,
   artifactLabelIds,
   artifactNodes,
+  artifactGlossary,
   artifactSpeakers,
   buildArtifact,
   type Artifact,
 } from "../storage/exchange";
 import {
   planRetranslate,
+  retranslateSystemPrompt,
   runRetranslate,
   type RetranslateEvent,
   type RetranslateDeps,
@@ -95,6 +97,45 @@ describe("artifact round trip", () => {
   it("recovers the speaker glossary without the source book", () => {
     expect(artifactSpeakers(translated).length).toBeGreaterThan(0);
     expect(artifactSpeakers(translated).every((s) => !!s.jp)).toBe(true);
+  });
+
+  it("records the glossary it was translated with, and reuses it with no book", () => {
+    const withGlossary = buildArtifact({
+      book: book.file,
+      srcHash: book.srcHash,
+      chapter,
+      lang: "en",
+      model: "mock",
+      translations: new Map(),
+      generatedAt: 0,
+      glossary: [{ jp: "ヨシオリ", tl: "Yoshiori", source: "official", count: 1 }],
+    });
+    expect(withGlossary.glossary).toEqual([{ jp: "ヨシオリ", tl: "Yoshiori" }]);
+    // ヨシオリ is not in this chapter's text, so it is only reused if the text still mentions it.
+    const mentioning = {
+      ...withGlossary,
+      units: withGlossary.units.map((u, i) => (i === 0 ? { ...u, src: "ヨシオリ、こんにちは" } : u)),
+    };
+    expect(artifactGlossary(mentioning).map((g) => g.jp)).toContain("ヨシオリ");
+    expect(artifactGlossary(withGlossary).map((g) => g.jp)).not.toContain("ヨシオリ");
+  });
+
+  it("layers the user's current terms over an artifact that predates the glossary field", () => {
+    const g = artifactGlossary(translated, { dictionary: { ああああ: "Hello there" } });
+    expect(g.some((e) => e.jp === "ああああ" && e.tl === "Hello there")).toBe(true);
+  });
+
+  it("sends the glossary and the file note in a retranslation prompt", () => {
+    const p = retranslateSystemPrompt(
+      DEFAULT_SYSTEM_PROMPT,
+      "en",
+      [{ jp: "ヨシオリ", tl: "Yoshiori", source: "official", count: 1 }],
+      "keep it terse",
+      "ヨシオリ is a guard.",
+    );
+    expect(p).toContain("  ヨシオリ = Yoshiori");
+    expect(p).toContain("ヨシオリ is a guard.");
+    expect(p).toContain("keep it terse");
   });
 });
 
@@ -260,7 +301,7 @@ describe("runRetranslate", () => {
       maxOutputTokens: 4000,
       maxInputTokens: 8000,
       systemPromptTemplate: DEFAULT_SYSTEM_PROMPT,
-      speakers: artifactSpeakers(translated),
+      glossary: artifactGlossary(translated),
       labels,
       lang: "en",
       calibration: { charsPerToken: 1, outputRatio: 0.9, samples: 0 },

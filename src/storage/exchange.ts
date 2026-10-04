@@ -9,7 +9,8 @@
  *
  * API keys are never written here.
  */
-import type { Chapter, Lang, SceneNode, Speaker } from "../scenario/model";
+import { buildGlossary, type UserTerms } from "../scenario/glossary";
+import type { Chapter, GlossaryEntry, Lang, SceneNode, Speaker } from "../scenario/model";
 import { isTranslatable } from "../scenario/model";
 
 export const ARTIFACT_VERSION = 1;
@@ -61,6 +62,11 @@ export interface Artifact {
   markers: ArtifactMarker[];
   /** Units the endpoint never returned; shown as gaps rather than hidden. */
   incomplete?: string[];
+  /**
+   * The names and terms sent with this chapter, so a retranslation from a shared file
+   * (no `.book.html`) sends the same ones. Additive and ignorable, like `units[].model`.
+   */
+  glossary?: { jp: string; tl: string }[];
 }
 
 export type ShiftDirection = "up" | "down";
@@ -143,6 +149,8 @@ export function buildArtifact(args: {
   /** User-supplied display-name → translated-name map for `lang`. Applied only when
    *  the parser did not already provide an official value for `lang`. */
   customNames?: Record<string, string>;
+  /** What was sent in the system prompt; recorded so retranslation can reuse it. */
+  glossary?: GlossaryEntry[];
 }): Artifact {
   const units: ArtifactUnit[] = [];
   const markers: ArtifactMarker[] = [];
@@ -167,6 +175,7 @@ export function buildArtifact(args: {
     units,
     markers,
     ...(incomplete.length ? { incomplete } : {}),
+    ...(args.glossary?.length ? { glossary: args.glossary.map(({ jp, tl }) => ({ jp, tl })) } : {}),
   };
 }
 
@@ -298,6 +307,24 @@ export function artifactSpeakers(a: Artifact): Speaker[] {
     if (u.speaker && !seen.has(u.speaker.jp)) seen.set(u.speaker.jp, u.speaker);
   }
   return [...seen.values()];
+}
+
+/**
+ * The glossary for a retranslation. Uses what the artifact recorded when it was
+ * translated, then layers on the user's current entries — so a file with no
+ * `.book.html` behind it still gets mentioned names and the user's terms.
+ */
+export function artifactGlossary(a: Artifact, user: UserTerms = {}): GlossaryEntry[] {
+  const speakers = artifactSpeakers(a);
+  return buildGlossary({
+    nodes: artifactNodes(a),
+    lang: a.lang,
+    speakers,
+    bookSpeakers: speakers,
+    carried: Object.fromEntries((a.glossary ?? []).map((g) => [g.jp, g.tl])),
+    custom: { ...user.dictionary, ...user.customNames },
+    excluded: user.excluded,
+  });
 }
 
 /**

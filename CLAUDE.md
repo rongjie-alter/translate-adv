@@ -82,6 +82,30 @@ Structure is sent as context but never echoed back; that roughly halves output t
 the binding constraint on the free tiers this targets. Labels are shortened to short aliases
 (`labels.ts`) before sending, because `quest_evMain_touroumatsuri2026_0_a_alt1` is pure cost.
 
+### The glossary: text-driven, not speaker-driven
+
+`scenario/glossary.ts` decides which names and terms the system prompt's `{{glossary}}` carries
+for a chapter. A name is sent if its speaker label appears in the chapter **or its Japanese
+appears in the chapter's text** (longest match first, katakana-only keys must not sit inside a
+longer katakana word). Candidates, merged by Japanese key: every speaker in the *book* (not just
+the chapter), `Book.terms` from `parse.py`'s `#term-meta`, the Dictionary + per-file
+`customNames`, and an artifact's recorded `glossary`. Precedence: a speaker's parser name, then
+the user's entry, then the game tables.
+
+Two filters keep the prompt small, because every line is input tokens on every chunk and the
+model already handles most generic words. `isValuableTerm` drops `？？？？`, `（観客）`,
+`…？` unknown-speaker labels, collectives (`〜たち`, `３人`, `全員`) and 1–3 character pure-kanji
+nouns (`少年`); **user-typed entries bypass it**. And `GLOSSARY_LIMIT` caps the list, speakers
+first then by frequency. `parse.py` mirrors `isValuableTerm` (`isValuableTerm()` there) so
+`#term-meta` only lists Localize rows that pass it *and* occur in the book — ~30 rows for
+`main23`, not the 1015-row table. Keep the two copies in step.
+
+`assembleSystemPrompt` is the single place the prompt is built (template + glossary + file note);
+`runner.ts`, `retranslate.ts`, `useTranslation.ts`, `useRetranslate.ts` and the Scan estimate all
+go through it. `Artifact.glossary` records what was sent so a `.tl.json` with no `.book.html`
+retranslates with the same terms; `SourceRecord.excludedTerms` is the per-file off switch the
+Scan screen's glossary panel writes. Nothing on the wire changed.
+
 ### Retranslating selected lines
 
 `retranslate.ts` redoes a hand-picked set of units without redoing the chapter. It is driven by
@@ -123,7 +147,8 @@ free-tier quota.
 writes `data-*` attributes onto the elements it was already emitting: `data-chara`, `data-pose`,
 `data-chara-{en,zh-hans,zh-hant}` resolved through `Character.xls → NameText → Localize.xls`, plus
 `data-to`/`data-if`/`data-do` on selections and jumps, `data-param` on `<code>`, and
-`data-parse-version` on `<body>`.
+`data-parse-version` on `<body>`. It also embeds `<script id="term-meta">` — see the
+glossary section; older files lack it and simply send fewer terms.
 
 `parseHtml.ts` prefers those attributes and falls back to the visible text when absent, so files
 generated before this existed still work — just without official names. Keep that fallback intact;
