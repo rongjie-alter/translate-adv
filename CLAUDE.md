@@ -70,8 +70,10 @@ Models echo the `>alias` of a branch option and the `Name：` of a speaker back 
 is worded, and every stored echo is replayed as `~` context, teaching the next chunk to do it
 too. So the prompt does **not** forbid either; `scenario/cleanup.ts` strips them mechanically —
 per line in `parseResponse` (where the real alias and the speaker's names are on the `WireLine`),
-and over whole artifacts in `parseArtifact`/`buildArtifact` (`cleanUnits`) to repair older files.
-It must stay idempotent, since clean text passes through it on every import. A prefix is removed
+and over a whole artifact by `cleanUnits`, which the **Clean up** button in `ReviewView` runs to
+repair older files. It is a button, not an import step, because it rewrites translations — the
+user opts in. It saves through `putUnits(..., { keepPrevious: true })` so the lines can be
+reverted. It must stay idempotent, since it can be run repeatedly. A prefix is removed
 only if it matches a name the speaker is known by, is a prefix learned from a majority of that
 speaker's own lines, or (parse time only) looks like a bare name. Match each colon in turn: a
 speaker name can itself contain one (`SYSTEM：DEUS`), and CJK output uses `：` with no space after.

@@ -8,6 +8,7 @@
  */
 import { Fragment } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { cleanUnits } from "../scenario/cleanup";
 import { renderCompact } from "../scenario/inline";
 import { LANG_LABEL, type Lang } from "../scenario/model";
 import { speakerName } from "../scenario/serialize";
@@ -246,6 +247,31 @@ export function ReviewView({
     store.toast(`${texts.size} line${texts.size === 1 ? "" : "s"} shifted and saved.`);
   }, [persistedArtifact, setSelection, shiftDraft, store]);
 
+  /**
+   * Strip echoed `>alias` / `Name：` prefixes from the stored lines. Deliberately a
+   * button, not an import step: it rewrites translations, so the user opts in.
+   */
+  const cleanUp = useCallback(async () => {
+    if (!persistedArtifact || shiftDraft) return;
+    const cleaned = cleanUnits(persistedArtifact.units);
+    const texts = new Map<string, string>();
+    cleaned.forEach((u, i) => {
+      if (u !== persistedArtifact.units[i]) texts.set(u.id, u.tl);
+    });
+    if (!texts.size) {
+      store.toast("Nothing to clean up.");
+      return;
+    }
+
+    const at = Date.now();
+    await db.putUnits(artifactKey(persistedArtifact), texts, { keepPrevious: true, at });
+    await store.saveArtifact(
+      applyTranslations(persistedArtifact, texts, { model: persistedArtifact.model, at, preserveModel: true }),
+    );
+    setEditedIds((prev) => new Set([...prev, ...texts.keys()]));
+    store.toast(`${texts.size} line${texts.size === 1 ? "" : "s"} cleaned up.`);
+  }, [persistedArtifact, shiftDraft, store]);
+
   const closeRetranslate = useCallback(() => {
     if (hint.trim() && !window.confirm("Discard your note?")) return;
     setRetranslateOpen(false);
@@ -324,6 +350,13 @@ export function ReviewView({
             </button>
             <button onClick={() => findReplaceRef.current?.showModal()} disabled={!!shiftDraft}>
               Find & Replace…
+            </button>
+            <button
+              onClick={() => void cleanUp()}
+              disabled={!!shiftDraft || busy}
+              title="Remove echoed >alias markers and speaker-name prefixes from the translations."
+            >
+              Clean up
             </button>
           </div>
         ) : null}

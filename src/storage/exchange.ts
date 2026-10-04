@@ -9,7 +9,6 @@
  *
  * API keys are never written here.
  */
-import { cleanUnits } from "../scenario/cleanup";
 import type { Chapter, Lang, SceneNode, Speaker } from "../scenario/model";
 import { isTranslatable } from "../scenario/model";
 
@@ -145,20 +144,17 @@ export function buildArtifact(args: {
    *  the parser did not already provide an official value for `lang`. */
   customNames?: Record<string, string>;
 }): Artifact {
-  const rows: ArtifactUnit[] = [];
+  const units: ArtifactUnit[] = [];
   const markers: ArtifactMarker[] = [];
 
   for (const node of args.chapter.nodes) {
     if (isTranslatable(node)) {
-      rows.push(toUnit(node, args.translations.get(node.uid) ?? "", args.lang, args.customNames));
+      units.push(toUnit(node, args.translations.get(node.uid) ?? "", args.lang, args.customNames));
     } else {
-      markers.push(toMarker(node, rows.length));
+      markers.push(toMarker(node, units.length));
     }
   }
 
-  // Rows saved before parse-time clean-up existed may still carry an echoed `>alias`
-  // or `Name：`; export is the one place every stored row passes through.
-  const units = cleanUnits(rows);
   const incomplete = units.filter((u) => !u.tl).map((u) => u.id);
   return {
     v: ARTIFACT_VERSION,
@@ -375,8 +371,7 @@ export function parseArtifact(text: string, fileName = "file"): Artifact {
     lang: a.lang,
     model: a.model ?? "",
     generatedAt: a.generatedAt ?? 0,
-    // Files from before parse-time clean-up carry echoed `>alias` / `Name：` prefixes.
-    units: cleanUnits(a.units.map(sanitizeUnit)),
+    units: a.units.map(sanitizeUnit),
     markers: a.markers ?? [],
     ...(a.incomplete ? { incomplete: a.incomplete } : {}),
   };
