@@ -5,6 +5,7 @@ import { LANG_LABEL } from "../scenario/model";
 import { jobProgress } from "../orchestrator/job";
 import { useActiveBook, useStore } from "./store";
 import type { useTranslation } from "./useTranslation";
+import * as db from "../storage/db";
 import { CopyPre } from "./CopyPre";
 
 export function TranslateView({
@@ -166,6 +167,24 @@ export function TranslateView({
                     }}
                   >
                     Continue
+                  </button>
+                  <button
+                    class="danger"
+                    disabled={translation.running && s?.jobId === j.id}
+                    title="Delete this job and its saved partial translations"
+                    onClick={async () => {
+                      if (
+                        !window.confirm(
+                          `Remove the unfinished job for ${j.chapter} (${LANG_LABEL[j.lang]})? ` +
+                            `Its ${p.done}/${p.total} translated chunks will be discarded.`,
+                        )
+                      )
+                        return;
+                      await db.deleteJob(j.id);
+                      await store.refreshJobs();
+                    }}
+                  >
+                    Remove
                   </button>
                 </li>
               );
