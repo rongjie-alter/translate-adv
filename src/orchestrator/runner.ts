@@ -7,7 +7,7 @@
  * ever sent when the limiter says there is quota for it, because on a free tier a
  * throttled request is quota burned for nothing.
  */
-import type { chat } from "../llm/client";
+import type { chat, sleep } from "../llm/client";
 import { calibrate, estimateTokens, type Calibration } from "../llm/estimate";
 import type { Quota } from "../llm/limiter";
 import { assembleSystemPrompt } from "../llm/prompt";
@@ -23,7 +23,7 @@ export type RunEvent =
   | { type: "chunk-done"; index: number; units: number; usage: { prompt: number; completion: number } }
   | { type: "chunk-failed"; index: number; error: string }
   | { type: "waiting"; ms: number; reason: string }
-  | { type: "retry"; index: number; attempt: number; error: string }
+  | { type: "retry"; index: number; attempt: number; error: string; waitMs: number }
   | { type: "repair"; index: number; missing: number }
   | { type: "log"; message: string }
   | { type: "done"; failed: number }
@@ -51,6 +51,7 @@ export interface RunnerDeps {
   onEvent(e: RunEvent): void;
   /** Injectable for tests. */
   chat?: typeof chat;
+  sleep?: typeof sleep;
 }
 
 /** Translated lines carried into the next chunk so the model keeps its footing. */
@@ -141,9 +142,16 @@ export async function runJob(
       job.updatedAt = Date.now();
       await deps.saveJob(job);
       deps.onEvent({ type: "chunk-failed", index: record.index, error: record.error });
-      // A dead endpoint or an exhausted daily quota will fail every remaining chunk
-      // the same way; stopping leaves the quota for a later, working run.
-      if (isFatal(e)) break;
+      // A dead or overloaded endpoint (retries already exhausted) or an exhausted daily
+      // quota will fail every remaining chunk the same way; stopping leaves the quota
+      // for a later, working run.
+      if (isFatal(e)) {
+        deps.onEvent({
+          type: "log",
+          message: `Stopping after chunk ${record.index + 1}: the endpoint is still failing. Progress is saved — press Continue later.`,
+        });
+        break;
+      }
     }
   }
 

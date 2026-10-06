@@ -23,7 +23,7 @@ const MAX_REPAIRS = 2;
 /** Events both runners emit. Structurally a subset of `RunEvent`. */
 export type SendEvent =
   | { type: "waiting"; ms: number; reason: string }
-  | { type: "retry"; index: number; attempt: number; error: string }
+  | { type: "retry"; index: number; attempt: number; error: string; waitMs: number }
   | { type: "repair"; index: number; missing: number }
   | { type: "log"; message: string }
   | CallEvent;
@@ -54,10 +54,20 @@ export interface SendDeps {
   onEvent(e: SendEvent): void;
   /** Injectable for tests. */
   chat?: typeof chat;
+  sleep?: typeof sleep;
 }
 
+/**
+ * Whether a failed unit of work should end the run rather than move on to the next.
+ *
+ * Covers both a non-retryable error (bad key, exhausted daily quota) and a retryable one
+ * that is still failing after every attempt (a 503, a dead connection): the next chunk
+ * would meet the same fate and just burn quota. An LlmError with a 2xx status is an
+ * oddity of this one response (an empty reply), not a sign the endpoint is down.
+ */
 export function isFatal(e: unknown): boolean {
-  return e instanceof LlmError && !e.retryable;
+  if (!(e instanceof LlmError)) return false;
+  return !e.retryable || e.status === 0 || e.status >= 400;
 }
 
 /** One request, with quota waiting and retry/backoff around it. */
@@ -75,6 +85,7 @@ export async function sendRequest(args: {
   const { system, user, estimate, index, deps, signal } = args;
   const kind = args.kind ?? "initial";
   const call = deps.chat ?? chat;
+  const doSleep = deps.sleep ?? sleep;
   let lastError: unknown;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -91,7 +102,7 @@ export async function sendRequest(args: {
           false,
         );
       }
-      await sleep(Math.min(avail.waitMs, 15_000), signal);
+      await doSleep(Math.min(avail.waitMs, 15_000), signal);
     }
 
     deps.limiter.reserve(estimate);
@@ -136,9 +147,11 @@ export async function sendRequest(args: {
       });
       if (!(e instanceof LlmError) || !e.retryable) throw e;
       if (e.status === 429) deps.limiter.penalize(e.retryAfter ?? 30);
+      if (attempt === MAX_ATTEMPTS - 1) break; // out of attempts: no point sleeping first
       const wait = backoffMs(attempt, e.retryAfter, e.status);
-      deps.onEvent({ type: "retry", index, attempt: attempt + 1, error: e.message });
-      await sleep(wait, signal);
+      deps.onEvent({ type: "retry", index, attempt: attempt + 1, error: e.message, waitMs: wait });
+      deps.onEvent({ type: "waiting", ms: wait, reason: "retry" });
+      await doSleep(wait, signal);
     }
   }
   throw lastError;

@@ -364,6 +364,36 @@ describe("runJob", () => {
     expect(job.chunks.filter((c) => c.status === "pending").length).toBeGreaterThan(0);
   });
 
+  it("stops after a retryable error outlasts every retry, instead of moving to the next chunk", async () => {
+    let calls = 0;
+    const overloaded = async (): Promise<ChatResponse> => {
+      calls++;
+      throw new LlmError("model overloaded", 503, true);
+    };
+    const { chunks, job, deps, events } = setup({ chat: overloaded });
+    deps.sleep = async () => {};
+    await runJob(job, chunks, "en", deps, new AbortController().signal);
+    expect(job.chunks[0].status).toBe("failed");
+    expect(job.chunks.filter((c) => c.status === "failed")).toHaveLength(1);
+    expect(job.chunks.filter((c) => c.status === "pending").length).toBeGreaterThan(0);
+    expect(calls).toBe(4); // one chunk's attempts, none spent on the rest
+    expect(events.filter((e) => e.type === "retry")).toHaveLength(3); // no retry once out of attempts
+  });
+
+  it("announces each backoff as a timed wait so the UI can count it down", async () => {
+    let calls = 0;
+    const flaky = async (req: Parameters<typeof deps.chat>[0]): Promise<ChatResponse> => {
+      if (++calls === 1) throw new LlmError("busy", 503, true);
+      return echoChat()(req);
+    };
+    const { chunks, job, deps, events } = setup({ chat: flaky });
+    deps.sleep = async () => {};
+    await runJob(job, chunks, "en", deps, new AbortController().signal);
+    const wait = events.find((e) => e.type === "waiting" && e.reason === "retry");
+    expect(wait).toMatchObject({ reason: "retry" });
+    expect(wait && "ms" in wait && wait.ms).toBeGreaterThanOrEqual(30_000); // 503 floor
+  });
+
   it("waits for quota before sending, and never sends without reserving", async () => {
     const { chunks, job, deps, events } = setup();
     const order: string[] = [];

@@ -25,6 +25,7 @@ import { normalizeBookBase } from "../storage/groups";
 import { FindReplacePanel } from "./FindReplaceDialog";
 import { ReviewMarker, ReviewUnit, type Row } from "./ReviewUnit";
 import { useStore } from "./store";
+import { Waiting } from "./Waiting";
 import type { Proposal, useRetranslate } from "./useRetranslate";
 
 type Filter = "all" | "gap" | "sel";
@@ -565,11 +566,7 @@ function ReviewBar({
             {s.usage.promptTokens.toLocaleString()} in / {s.usage.completionTokens.toLocaleString()} out
           </span>
         </div>
-        {s.waiting ? (
-          <p class="waiting">
-            Waiting {Math.ceil(s.waiting.ms / 1000)}s — {waitReason(s.waiting.reason)}
-          </p>
-        ) : null}
+        <Waiting wait={s.waiting} />
         <ol class="log">
           {s.log.slice(-4).reverse().map((l, i) => (
             <li key={i} class={l.kind}>
@@ -850,19 +847,4 @@ function countByLabel(rows: Row[]): Map<string, number> {
     counts.set(r.label, (counts.get(r.label) ?? 0) + 1);
   }
   return counts;
-}
-
-function waitReason(reason: string): string {
-  switch (reason) {
-    case "rpm":
-      return "requests-per-minute limit";
-    case "tpm":
-      return "tokens-per-minute limit";
-    case "rpd":
-      return "daily request quota";
-    case "backoff":
-      return "the endpoint asked us to slow down";
-    default:
-      return reason;
-  }
 }

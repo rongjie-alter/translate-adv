@@ -19,6 +19,7 @@ import * as db from "../storage/db";
 import type { SourceRecord } from "../storage/db";
 import { buildArtifact } from "../storage/exchange";
 import { useStore } from "./store";
+import { waitState, type WaitState } from "./Waiting";
 
 export interface LogLine {
   at: number;
@@ -50,7 +51,7 @@ export interface RunState {
   unitsDone: number;
   unitsTotal: number;
   usage: { requests: number; promptTokens: number; completionTokens: number };
-  waiting: { ms: number; reason: string } | null;
+  waiting: WaitState | null;
   log: LogLine[];
   calls: CallRecord[];
   finished: boolean;
@@ -301,11 +302,14 @@ function onEvent(e: RunEvent, setState: (fn: (s: RunState | null) => RunState | 
       case "chunk-failed":
         return add("error", `Chunk ${e.index + 1} failed: ${e.error}`);
       case "retry":
-        return add("warn", `Retry ${e.attempt} for chunk ${e.index + 1}: ${e.error}`);
+        return add(
+          "warn",
+          `Retry ${e.attempt} for chunk ${e.index + 1} in ${Math.ceil(e.waitMs / 1000)}s: ${e.error}`,
+        );
       case "repair":
         return add("warn", `Chunk ${e.index + 1}: re-asking for ${e.missing} missing line(s)`);
       case "waiting":
-        return { ...s, waiting: { ms: e.ms, reason: e.reason } };
+        return { ...s, waiting: waitState(e) };
       case "log":
         return add("info", e.message);
       case "call":

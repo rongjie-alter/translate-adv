@@ -428,7 +428,7 @@ export type RetranslateEvent =
     }
   | { type: "request-failed"; index: number; error: string }
   | { type: "waiting"; ms: number; reason: string }
-  | { type: "retry"; index: number; attempt: number; error: string }
+  | { type: "retry"; index: number; attempt: number; error: string; waitMs: number }
   | { type: "repair"; index: number; missing: number }
   | { type: "log"; message: string }
   | { type: "done"; translated: number; failed: number }
@@ -530,6 +530,7 @@ export async function runRetranslate(
     maxOutputTokens: deps.maxOutputTokens,
     reasoningEffort: deps.reasoningEffort,
     chat: deps.chat,
+    sleep: deps.sleep,
     onEvent: (e) => deps.onEvent(e),
   };
 
@@ -593,8 +594,9 @@ export async function runRetranslate(
       if (signal.aborted) throw e;
       failedRequests++;
       deps.onEvent({ type: "request-failed", index: i, error: (e as Error).message });
-      // A dead endpoint or an exhausted daily quota fails every remaining request
-      // the same way; stopping leaves the quota for a later, working run.
+      // A dead or overloaded endpoint (retries already exhausted) or an exhausted daily
+      // quota fails every remaining request the same way; stopping leaves the quota for
+      // a later, working run.
       if (isFatal(e)) break;
     }
   }

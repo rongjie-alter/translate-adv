@@ -7,6 +7,7 @@ import { useActiveBook, useStore } from "./store";
 import type { useTranslation } from "./useTranslation";
 import * as db from "../storage/db";
 import { CopyPre } from "./CopyPre";
+import { Waiting } from "./Waiting";
 
 export function TranslateView({
   translation,
@@ -53,11 +54,7 @@ export function TranslateView({
             </span>
           </div>
 
-          {s.waiting ? (
-            <p class="waiting">
-              Waiting {Math.ceil(s.waiting.ms / 1000)}s — {waitReason(s.waiting.reason)}
-            </p>
-          ) : null}
+          <Waiting wait={s.waiting} />
           {s.error ? <p class="warn status-banner error">{s.error}</p> : null}
           {s.finished && !s.error ? (
             <p class="ok status-banner success">
@@ -195,19 +192,4 @@ export function TranslateView({
       ) : null}
     </section>
   );
-}
-
-function waitReason(reason: string): string {
-  switch (reason) {
-    case "rpm":
-      return "requests-per-minute limit";
-    case "tpm":
-      return "tokens-per-minute limit";
-    case "rpd":
-      return "daily request quota";
-    case "backoff":
-      return "the endpoint asked us to slow down";
-    default:
-      return reason;
-  }
 }

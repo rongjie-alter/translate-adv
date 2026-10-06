@@ -28,6 +28,7 @@ import {
   type Artifact,
 } from "../storage/exchange";
 import { useStore } from "./store";
+import { waitState, type WaitState } from "./Waiting";
 import type { LogLine } from "./useTranslation";
 
 /** One line the model has re-done, awaiting the user's decision. */
@@ -48,7 +49,7 @@ export interface RetryState {
   requestsTotal: number;
   unitsTotal: number;
   usage: { requests: number; promptTokens: number; completionTokens: number };
-  waiting: { ms: number; reason: string } | null;
+  waiting: WaitState | null;
   log: LogLine[];
   proposals: Proposal[];
   /** Lines that were asked for but never came back. */
@@ -316,11 +317,14 @@ function onEvent(
       case "request-failed":
         return add("error", `Call ${e.index + 1} failed: ${e.error}`);
       case "retry":
-        return add("warn", `Retry ${e.attempt} for call ${e.index + 1}: ${e.error}`);
+        return add(
+          "warn",
+          `Retry ${e.attempt} for call ${e.index + 1} in ${Math.ceil(e.waitMs / 1000)}s: ${e.error}`,
+        );
       case "repair":
         return add("warn", `Call ${e.index + 1}: re-asking for ${e.missing} missing line(s)`);
       case "waiting":
-        return { ...s, waiting: { ms: e.ms, reason: e.reason } };
+        return { ...s, waiting: waitState(e) };
       case "log":
         return add("info", e.message);
       case "call":
