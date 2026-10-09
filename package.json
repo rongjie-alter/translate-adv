@@ -14,13 +14,13 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "preact": "^10.29.7"
+    "preact": "^10.29.8"
   },
   "devDependencies": {
-    "@preact/preset-vite": "^2.10.2",
+    "@preact/preset-vite": "^2.10.6",
     "happy-dom": "^20.0.0",
     "typescript": "7.0.2",
-    "vite": "8.1.5",
+    "vite": "8.3.1",
     "vitest": "^4.0.18"
   }
 }
