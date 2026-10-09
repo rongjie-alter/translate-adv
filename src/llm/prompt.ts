@@ -44,7 +44,7 @@ Keep bracketed stage directions like （飛び起きる） in their brackets.
 Output rules:
 - One line per input line, in the same order, each starting with the same number.
 - Output the number and the translated text only. No commentary.
-- Never merge, split, skip or reorder lines.
+- Never merge, split, skip or reorder lines.`
 
 export function buildSystemPrompt(
   template: string,
