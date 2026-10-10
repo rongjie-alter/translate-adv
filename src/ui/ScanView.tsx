@@ -4,7 +4,7 @@
  * The estimate is the point of this screen: on a free tier the user needs to know
  * "this chapter is 14 calls and most of today's quota" *before* spending it.
  */
-import { useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { estimateJob, estimateTokens } from "../llm/estimate";
 import { assembleSystemPrompt, glossaryBlock } from "../llm/prompt";
 import { serializeChunk } from "../scenario/serialize";
@@ -35,6 +35,21 @@ export function ScanView({
   const chapter = active?.book.chapters.find((c) => c.name === selected) ?? null;
   const glossary = useGlossary(chapter);
   const estimate = useEstimate(chapter, glossary);
+
+  // Ctrl+V anywhere on this page, except where the user is pasting into a text field. Files only:
+  // a file keeps its name, which a book needs because `.tl.json` files refer to it.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("input, textarea, select, [contenteditable]")) return;
+      e.preventDefault();
+      const files = Array.from(e.clipboardData?.files ?? []);
+      if (files.length) void store.addFiles(files);
+      else store.toast("The clipboard has no file — copy a .book.html or .tl.json file, then paste.", "error");
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  });
 
   return (
     <section class="scan">
@@ -104,7 +119,8 @@ export function ScanView({
       {!active ? (
         <p class="empty">
           Drop a <code>.book.html</code> produced by <code>parse.py</code> anywhere on this page.
-          You can drop <code>.tl.json</code> files from other people here too.
+          You can drop <code>.tl.json</code> files from other people here too. Files copied in your
+          file manager can be pasted with Ctrl+V.
         </p>
       ) : (
         <>
