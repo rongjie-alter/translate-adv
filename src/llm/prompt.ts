@@ -1,11 +1,11 @@
 /**
  * The system prompt.
  *
- * Editable in Settings; `{{targetLanguage}}` and `{{glossary}}` are substituted at
- * send time. The wire-format rules are load-bearing — if the model stops emitting
- * `<id> <text>` the whole chunk has to be repaired or retried — so they are stated
- * up front and repeated as the last line, which is where instruction-following is
- * strongest.
+ * Editable in Settings for session-level experimentation; `{{targetLanguage}}` and `{{glossary}}`
+ * are substituted at send time. Resets to DEFAULT_SYSTEM_PROMPT on page reload.
+ * The wire-format rules are load-bearing — if the model stops emitting `<id> <text>` the whole
+ * chunk has to be repaired or retried — so they are stated up front and repeated as the last line,
+ * which is where instruction-following is strongest.
  */
 import { LANG_LABEL, type GlossaryEntry, type Lang } from "../scenario/model";
 

@@ -137,15 +137,19 @@ export async function loadSettings(): Promise<Settings> {
   const stored = await run<Settings | undefined>("settings", "readonly", (s) => s.get("app"));
   if (!stored) return defaultSettings();
   // Merge forward so a new built-in preset or a new field appears for existing users.
+  // Note: systemPrompt is session-only for user experimentation and always resets
+  // to the latest DEFAULT_SYSTEM_PROMPT on reload.
   const base = defaultSettings();
   const presets = [...stored.presets];
   for (const p of base.presets) if (!presets.some((q) => q.id === p.id)) presets.push(p);
   const dictionary = { ...base.dictionary, ...stored.dictionary };
-  return { ...base, ...stored, presets, dictionary };
+  return { ...base, ...stored, systemPrompt: DEFAULT_SYSTEM_PROMPT, presets, dictionary };
 }
 
 export async function saveSettings(s: Settings): Promise<void> {
-  await run("settings", "readwrite", (st) => st.put(s, "app"));
+  // System prompt is session-only; do not persist user edits to IndexedDB.
+  const { systemPrompt: _ignored, ...persistable } = s;
+  await run("settings", "readwrite", (st) => st.put(persistable, "app"));
 }
 
 // -- sources ----------------------------------------------------------------

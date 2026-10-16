@@ -179,6 +179,12 @@ export function SettingsView() {
 
       <label class="prompt">
         System prompt
+        <small class="hint">
+          Edits here only persist for the current browser session for experimentation and will reset
+          to the latest version on page reload. For story-specific guidance (tone, character relationships,
+          scene nuances), use <strong>Additional context</strong> on the Scan tab instead. If you find
+          an issue or bug with the default prompt, please report it to the developer.
+        </small>
         <textarea
           rows={22}
           value={settings.systemPrompt}
