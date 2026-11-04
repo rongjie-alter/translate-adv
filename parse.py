@@ -246,7 +246,10 @@ document.querySelector("#ruby-btn").onclick = function() {
 
     self.valen_special = args.valentine or self.VALEN_PATTERN.match(self.filename) != None
 
-    self.tl_name = args.common and (args.special or args.tl_name)
+    # A translated body with Japanese speaker labels reads wrong, so any non-Japanese
+    # output names speakers in that language unless --no_tl_name says otherwise.
+    tl_name = args.tl_name if args.tl_name is not None else args.lang["name"] != "Japanese"
+    self.tl_name = args.common and (args.special or tl_name)
 
     # Machine-readable annotations for the translation web app. Purely additive --
     # they are attributes on the elements that were already being written, so
@@ -903,7 +906,10 @@ if __name__ == "__main__":
   parser.add_argument('--greeting', type=str, help='Greeting file name')
   parser.add_argument('--sign', type=str, help='Sign file name')
   parser.add_argument('--special', action='store_true')
-  parser.add_argument('--tl_name', action='store_true', help="Translate name")
+  parser.add_argument('--tl_name', dest='tl_name', action='store_true', default=None,
+                      help="Translate speaker names (default whenever --lang is not jp)")
+  parser.add_argument('--no_tl_name', dest='tl_name', action='store_false',
+                      help="Keep the Japanese sprite name even when --lang is not jp")
   parser.add_argument('--no_tl_meta', dest='tl_meta', action='store_false',
                       help="Omit the data-* attributes the translation web app reads")
   parser.add_argument('--valentine', action='store_true')

@@ -12,6 +12,7 @@ import { LANG_LABEL, isTranslatable, type Book, type Chapter, type Lang } from "
 import { speakerName } from "../scenario/serialize";
 import type { BilingualDoc } from "./bilingualHtml";
 import { unitLine, type SummaryChapter, type SummaryDoc } from "./doc";
+import { detectLanguage } from "./prompt";
 
 export function bookDocId(file: string): string {
   return `book:${file}`;
@@ -34,27 +35,44 @@ export function textDoc(text: string, title = "Pasted text"): SummaryDoc {
 }
 
 /**
- * The source side always names a speaker by `Speaker.jp`, never the base `nameText`: a
+ * The source side names a speaker by `Speaker.jp` (unless `lang` is given, for a book whose
+ * text is already translated), never the base `nameText`: a
  * bilingual file carries only the former, and all three routes to the same document must
  * produce the same text, or a synopsis would read as stale depending on how it was loaded.
  */
-export function chapterFromBook(chapter: Chapter): SummaryChapter {
+export function chapterFromBook(chapter: Chapter, lang?: Lang): SummaryChapter {
   const lines: string[] = [];
   for (const n of chapter.nodes) {
     if (!isTranslatable(n)) continue;
-    const speaker = n.kind === "text" && n.speaker ? n.speaker.jp : undefined;
+    const speaker = n.kind === "text" && n.speaker ? (lang ? speakerName(n.speaker, lang) : n.speaker.jp) : undefined;
     const line = unitLine(n.kind, speaker, n.src);
     if (line) lines.push(line);
   }
   return { id: chapter.name, title: chapter.name, text: lines.join("\n") };
 }
 
+/**
+ * The language of a book's dialogue when it is not Japanese, e.g. a `.book.en.html` from
+ * `parse.py --lang en`. The speakers' names are left out of the sample: they are Japanese
+ * in the very files this is meant to catch.
+ */
+function bookTextLang(book: Book): Lang | undefined {
+  const sample = book.chapters
+    .flatMap((c) => c.nodes.filter(isTranslatable).map((n) => n.src))
+    .join("\n");
+  const lang = detectLanguage(sample);
+  return lang === "en" || lang === "zh-hans" || lang === "zh-hant" ? lang : undefined;
+}
+
 export function docFromBook(file: string, book: Book): SummaryDoc {
+  // A book whose text is already translated names its speakers in that language too;
+  // a Japanese book keeps `Speaker.jp` (see {@link chapterFromBook}).
+  const lang = bookTextLang(book);
   return {
     id: bookDocId(file),
     title: file,
     origin: "book",
-    chapters: book.chapters.map(chapterFromBook).filter((c) => c.text),
+    chapters: book.chapters.map((c) => chapterFromBook(c, lang)).filter((c) => c.text),
   };
 }
 

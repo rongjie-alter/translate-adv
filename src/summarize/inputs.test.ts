@@ -99,6 +99,42 @@ describe("chapterFromBook", () => {
   });
 });
 
+describe("docFromBook with already-translated text", () => {
+  // What `parse.py --lang en` writes: English dialogue, speaker still the Japanese sprite id.
+  const english: Book = {
+    file: "demo.book.en.html",
+    srcHash: "h",
+    hasMeta: true,
+    hasCharaMeta: true,
+    chapters: [
+      {
+        name: "ch1",
+        units: 2,
+        chars: 40,
+        nodes: [
+          {
+            kind: "text",
+            uid: "a/1",
+            src: "The festival begins.",
+            hash: "1",
+            speaker: { jp: "火のテンジン", nameText: "テンジン", tl: { en: "Tenjin" } },
+          },
+          { kind: "text", uid: "a/2", src: "Who is there?", hash: "2", speaker: { jp: "タサブロウ" } },
+        ],
+      },
+    ],
+  };
+
+  it("names speakers in the text's language, falling back to the Japanese name", () => {
+    const text = docFromBook(english.file, english).chapters[0].text;
+    expect(text).toBe("Tenjin: The festival begins.\nタサブロウ: Who is there?");
+  });
+
+  it("leaves a Japanese book on Speaker.jp", () => {
+    expect(docFromBook(book.file, book).chapters[0].text).toBe(JP_TEXT);
+  });
+});
+
 describe("docsFromArtifacts", () => {
   const docs = docsFromArtifacts([artifact2, artifact1]);
 

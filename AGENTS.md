@@ -177,6 +177,11 @@ writes `data-*` attributes onto the elements it was already emitting: `data-char
 `data-parse-version` on `<body>`. It also embeds `<script id="term-meta">` — see the
 glossary section; older files lack it and simply send fewer terms.
 
+`--lang en|cn|tw` also implies `--tl_name` (`--no_tl_name` opts out), so the visible speaker label
+is the official name and the pose is dropped from it; `data-chara-id`/`data-pose` still carry the
+Japanese sprite id and pose. The summarizer names a book's speakers in the text's language
+(`bookTextLang` in `summarize/inputs.ts`) when that text is not Japanese.
+
 `parseHtml.ts` prefers those attributes and falls back to the visible text when absent, so files
 generated before this existed still work — just without official names. Keep that fallback intact;
 a test strips every `data-*` attribute and asserts identical unit counts.
