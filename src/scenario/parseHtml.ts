@@ -24,7 +24,7 @@ import {
 } from "./model";
 
 /** `火のテンジン (通常):` -> name + pose. The pose is absent under `--tl_name`. */
-const CHARA_TEXT = /^(.*?)(?:\s*\((.*)\))?\s*[:：]\s*$/;
+export const CHARA_TEXT = /^(.*?)(?:\s*\((.*)\))?\s*[:：]\s*$/;
 
 const META_LANG_ATTR: Record<Lang, string> = {
   en: "data-chara-en",

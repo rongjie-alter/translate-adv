@@ -8,7 +8,6 @@
  * otherwise be no way back.
  */
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
-import { RateLimiter, emptyState } from "../llm/limiter";
 import type { Preset } from "../llm/presets";
 import {
   planRetranslate,
@@ -160,12 +159,7 @@ export function useRetranslate() {
 
       // The limiter must be the *chosen* preset's counter, not the active one, or
       // a retry silently spends another endpoint's free-tier quota.
-      const limiter = new RateLimiter(
-        preset.limits,
-        preset.quotaResetTz,
-        store.settings.limiter[preset.id] ?? emptyState(),
-        (s) => void store.saveSettings({ limiter: { ...store.settings.limiter, [preset.id]: s } }),
-      );
+      const limiter = store.limiterFor(preset);
 
       const byId = new Map(artifact.units.map((u) => [u.id, u]));
 

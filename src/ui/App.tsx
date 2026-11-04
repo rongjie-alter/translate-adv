@@ -4,9 +4,11 @@ import { LibraryView } from "./LibraryView";
 import { ReviewView } from "./ReviewView";
 import { ScanView } from "./ScanView";
 import { SettingsView } from "./SettingsView";
+import { SummarizeView } from "./SummarizeView";
 import { TranslateView } from "./TranslateView";
 import { useStore, type View } from "./store";
 import { useRetranslate } from "./useRetranslate";
+import { useSummarize } from "./useSummarize";
 import { useTranslation } from "./useTranslation";
 
 const TABS: { id: View; label: string }[] = [
@@ -14,6 +16,7 @@ const TABS: { id: View; label: string }[] = [
   { id: "translate", label: "Translate" },
   { id: "review", label: "Review" },
   { id: "library", label: "Library" },
+  { id: "summarize", label: "Summarize" },
   { id: "dictionary", label: "Dictionary" },
   { id: "settings", label: "Settings" },
 ];
@@ -22,8 +25,10 @@ export function App() {
   const store = useStore();
   const translation = useTranslation();
   const retry = useRetranslate();
+  const summary = useSummarize();
   // One endpoint, one quota: a retry and a full run must never be in flight together.
-  const busy = translation.running || retry.running;
+  // A summary run blocks them whichever preset it uses: one request stream at a time.
+  const busy = translation.running || retry.running || summary.running;
   const [dragging, setDragging] = useState(false);
   const metaWarningRef = useRef<HTMLDialogElement>(null);
   const helpDialogRef = useRef<HTMLDialogElement>(null);
@@ -83,6 +88,7 @@ export function App() {
               {t.label}
               {t.id === "translate" && translation.running ? <span class="dot" /> : null}
               {t.id === "review" && retry.running ? <span class="dot" /> : null}
+              {t.id === "summarize" && summary.running ? <span class="dot" /> : null}
             </button>
           ))}
         </nav>
@@ -125,6 +131,7 @@ export function App() {
         {store.view === "translate" && <TranslateView translation={translation} busy={busy} />}
         {store.view === "review" && <ReviewView retry={retry} busy={busy} />}
         {store.view === "library" && <LibraryView />}
+        {store.view === "summarize" && <SummarizeView summary={summary} busy={busy} />}
         {store.view === "dictionary" && <DictionaryView />}
         {store.view === "settings" && <SettingsView />}
       </main>
@@ -153,7 +160,7 @@ export function App() {
         ))}
       </div>
 
-      {dragging ? <div class="dropzone">Drop .book.html or .tl.json files</div> : null}
+      {dragging ? <div class="dropzone">Drop .book.html, .bilingual.html or .tl.json files</div> : null}
 
       <dialog
         class="help-dialog"

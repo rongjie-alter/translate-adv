@@ -111,6 +111,15 @@ const EM_COMPACT = /\*([^*]+)\*/g;
 const BIG_COMPACT = /\^([^^]+)\^/g;
 
 /**
+ * Compact text with its markup removed, for reading rather than round-tripping: ruby
+ * readings, `*emphasis*` and `^size^` markers are dropped, leaving the words. `{param}`
+ * placeholders stay, since the summarizer's prompt explains them.
+ */
+export function stripCompact(s: string): string {
+  return s.replace(RUBY_COMPACT, "$1").replace(EM_COMPACT, "$1").replace(BIG_COMPACT, "$1");
+}
+
+/**
  * Render compact text back to display HTML. Used for both the Japanese source and
  * the translation in the combined bilingual file.
  *

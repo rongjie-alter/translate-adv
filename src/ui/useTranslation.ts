@@ -6,7 +6,6 @@
  */
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { estimateTokens } from "../llm/estimate";
-import { RateLimiter, emptyState } from "../llm/limiter";
 import type { Preset } from "../llm/presets";
 import { assembleSystemPrompt } from "../llm/prompt";
 import { chunkNodes, type Chunk } from "../orchestrator/chunker";
@@ -189,12 +188,7 @@ export function useTranslation() {
     });
     if (already) log(`Resuming: ${already} of ${chunks.length} chunks already translated.`);
 
-    const limiter = new RateLimiter(
-      preset.limits,
-      preset.quotaResetTz,
-      store.settings.limiter[preset.id] ?? emptyState(),
-      (s) => void store.saveSettings({ limiter: { ...store.settings.limiter, [preset.id]: s } }),
-    );
+    const limiter = store.limiterFor(preset);
 
     try {
       const finished = await runJob(

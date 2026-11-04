@@ -694,3 +694,19 @@ progress { width: 100%; height: 0.6rem; }
 .glossary-add input[type="text"] {
   flex: 1 1 12rem;
 }
+
+/* Summarize */
+.summarize .sm-text textarea { margin-bottom: 0.5rem; }
+.sm-prompt { margin: 0.5rem 0 1rem; }
+.sm-prompt summary { cursor: pointer; color: var(--muted); }
+.sm-run { margin: 1rem 0; }
+.sm-chapters { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem; }
+.sm-chapter { border: 1px solid var(--line); border-radius: 8px; padding: 0.75rem 1rem; background: #fff; }
+.sm-chapter.stale { border-color: var(--warn); }
+.sm-chapter header { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.sm-chapter h3 { margin: 0; font-size: 0.95rem; }
+.sm-badge { font-size: 0.75rem; padding: 0 0.4rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
+.sm-badge.warn { color: var(--warn); border-color: var(--warn); }
+.sm-body p { margin: 0.6rem 0; }
+.sm-body { line-height: 1.7; }
+.sm-edit textarea { font-family: inherit; font-size: 0.95rem; }

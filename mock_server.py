@@ -159,6 +159,14 @@ class Handler(BaseHTTPRequestHandler):
       out.append(f"{m.group(1)} {translate_line(m.group(2), lang)}")
 
     content = "\n".join(out)
+    if "<chapter" in user:
+      # A summarizer request: prose in, prose out, no numbered lines to echo.
+      title = re.search(r'<chapter title="([^"]*)"', user)
+      body = re.search(r"<chapter[^>]*>\n(.*?)\n</chapter>", user, re.S)
+      carried = "<previous_synopsis" in user
+      n_lines = len(body.group(1).split("\n")) if body else 0
+      content = (f"(mock synopsis of {title.group(1) if title else '?'}: {n_lines} line(s)"
+                 f"{', continuing from the previous chapter' if carried else ''}.)")
     finish = "stop"
     if cfg.truncate and random.random() < cfg.truncate:
       content = content[: max(1, len(content) // 2)]

@@ -106,6 +106,33 @@ go through it. `Artifact.glossary` records what was sent so a `.tl.json` with no
 retranslates with the same terms; `SourceRecord.excludedTerms` is the per-file off switch the
 Scan screen's glossary panel writes. Nothing on the wire changed.
 
+### Summarizer (`src/summarize/`)
+
+A synopsis per chapter, in the language of the text it is given (the model is told the language
+explicitly; `detectLanguage` guesses it from script, the page lets the user override). It is a
+separate screen, not part of the translation pipeline, and it does **not** use the wire format —
+prose in, prose out — so the four-file contract above is untouched. `mock_server.py` answers a
+request containing `<chapter` with a canned synopsis.
+
+- `inputs.ts` flattens every source to `SummaryDoc` (chapters of `Name: text` lines): a scanned
+  `.book.html`, a Library artifact (both its translation and its Japanese side), a dropped
+  `.bilingual.html` (`bilingualHtml.ts`, which reads `div.tl`/`div.jp` back), or pasted text.
+  `store.addFiles` routes a bilingual file to `bilingualDocs` *before* `parseBookHtml`, which would
+  otherwise fuse each unit's two sides into one line.
+- Document ids are shared across routes (`book:<file>`, `tl:<file>::<lang>`) so a stored synopsis is
+  found again however the text was loaded. That is why the source side names speakers by
+  `Speaker.jp` everywhere — a bilingual file carries nothing else, and any difference would make a
+  synopsis read as stale (`SummaryRecord.srcHash` vs `textHash(chapter.text)`).
+- `core.ts` calls `sendRequest` from `send.ts`, so quota/retry behave as for translation, and the
+  hook reserves against the **summarizer's own** preset (`Settings.summaryPresetId`), not the active
+  one. A chapter over the input budget is split, each part summarized, then merged
+  (`PART_INSTRUCTION`/`MERGE_INSTRUCTION`, appended at send time like `REPAIR_INSTRUCTION`).
+- Carry-over (`Settings.summaryCarryOver`, default on) sends the previous chapter's synopsis as
+  `<previous_synopsis>`, which forces one chapter at a time; off runs `CONCURRENCY` chapters at once.
+  A chapter that is not being run still feeds the next one's carry-over from storage.
+- Synopses live in the `summaries` store (DB version 2), written per chapter. Free text is never stored.
+  `summaryPrompt` is session-only, like `systemPrompt`.
+
 ### Retranslating selected lines
 
 `retranslate.ts` redoes a hand-picked set of units without redoing the chapter. It is driven by

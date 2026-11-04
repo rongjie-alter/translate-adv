@@ -1,10 +1,10 @@
 /**
  * Persistence.
  *
- * IndexedDB, wrapped by hand rather than pulled from npm — the app needs five object
- * stores and no query language. Everything the user would hate to lose lives here:
- * settings and API keys, scanned source files, job progress, translated units, and
- * finished artifacts.
+ * IndexedDB, wrapped by hand rather than pulled from npm — the app needs a handful of
+ * object stores and no query language. Everything the user would hate to lose lives here:
+ * settings and API keys, scanned source files, job progress, translated units,
+ * finished artifacts, and chapter synopses.
  *
  * Translated units are written as each chunk lands, so a closed tab costs one chunk.
  */
@@ -12,13 +12,14 @@ import type { Calibration } from "../llm/estimate";
 import type { LimiterState } from "../llm/limiter";
 import { DEFAULT_PRESET_ID, PRESETS, type Preset } from "../llm/presets";
 import { DEFAULT_SYSTEM_PROMPT } from "../llm/prompt";
+import { DEFAULT_SUMMARY_PROMPT, type SummaryLength } from "../summarize/prompt";
 import type { Lang } from "../scenario/model";
 import type { Job } from "../orchestrator/job";
 import type { Artifact } from "./exchange";
 import { artifactKey } from "./exchange";
 
 const DB_NAME = "translate-adv";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export interface Settings {
   targetLang: Lang;
@@ -36,6 +37,13 @@ export interface Settings {
   limiter: Record<string, LimiterState>;
   /** Global dictionary of name translations, keyed by target language then JP/canonical name. */
   dictionary?: Partial<Record<Lang, Record<string, string>>>;
+  /** The summarizer's own model; independent of `presetId`, which only drives translation. */
+  summaryPresetId: string;
+  summaryLength: SummaryLength;
+  /** Send the previous chapter's synopsis with the next one. Makes the run sequential. */
+  summaryCarryOver: boolean;
+  /** Session-only, like `systemPrompt`. */
+  summaryPrompt: string;
 }
 
 export interface SourceRecord {
@@ -72,6 +80,21 @@ export interface UnitRecord {
   at?: number;
 }
 
+/** A chapter's synopsis. `key` is `summaryKey(docId, chapterId)`. */
+export interface SummaryRecord {
+  key: string;
+  docId: string;
+  chapterId: string;
+  title: string;
+  markdown: string;
+  model: string;
+  /** `textHash` of the chapter text it was written from; a mismatch means it is stale. */
+  srcHash: string;
+  at: number;
+  /** The user rewrote it, so regenerating asks first. */
+  edited?: boolean;
+}
+
 export function defaultSettings(): Settings {
   return {
     targetLang: "en",
@@ -82,6 +105,10 @@ export function defaultSettings(): Settings {
     chunkInputTokens: 0,
     calibration: {},
     limiter: {},
+    summaryPresetId: DEFAULT_PRESET_ID,
+    summaryLength: "medium",
+    summaryCarryOver: true,
+    summaryPrompt: DEFAULT_SUMMARY_PROMPT,
     dictionary: {
       en: {},
       "zh-hans": {},
@@ -103,6 +130,9 @@ function open(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains("artifacts")) db.createObjectStore("artifacts");
       if (!db.objectStoreNames.contains("handles")) db.createObjectStore("handles");
+      if (!db.objectStoreNames.contains("summaries")) {
+        db.createObjectStore("summaries", { keyPath: "key" }).createIndex("docId", "docId");
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -137,18 +167,25 @@ export async function loadSettings(): Promise<Settings> {
   const stored = await run<Settings | undefined>("settings", "readonly", (s) => s.get("app"));
   if (!stored) return defaultSettings();
   // Merge forward so a new built-in preset or a new field appears for existing users.
-  // Note: systemPrompt is session-only for user experimentation and always resets
-  // to the latest DEFAULT_SYSTEM_PROMPT on reload.
+  // Note: systemPrompt and summaryPrompt are session-only for user experimentation and
+  // always reset to the latest default on reload.
   const base = defaultSettings();
   const presets = [...stored.presets];
   for (const p of base.presets) if (!presets.some((q) => q.id === p.id)) presets.push(p);
   const dictionary = { ...base.dictionary, ...stored.dictionary };
-  return { ...base, ...stored, systemPrompt: DEFAULT_SYSTEM_PROMPT, presets, dictionary };
+  return {
+    ...base,
+    ...stored,
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    summaryPrompt: DEFAULT_SUMMARY_PROMPT,
+    presets,
+    dictionary,
+  };
 }
 
 export async function saveSettings(s: Settings): Promise<void> {
-  // System prompt is session-only; do not persist user edits to IndexedDB.
-  const { systemPrompt: _ignored, ...persistable } = s;
+  // The prompts are session-only; do not persist user edits to IndexedDB.
+  const { systemPrompt: _ignored, summaryPrompt: _ignored2, ...persistable } = s;
   await run("settings", "readwrite", (st) => st.put(persistable, "app"));
 }
 
@@ -335,6 +372,28 @@ export function getArtifact(key: string): Promise<Artifact | undefined> {
 
 export async function deleteArtifact(key: string): Promise<void> {
   await run("artifacts", "readwrite", (s) => s.delete(key));
+}
+
+// -- summaries --------------------------------------------------------------
+
+export async function putSummary(rec: SummaryRecord): Promise<void> {
+  await run("summaries", "readwrite", (s) => s.put(rec));
+}
+
+export function listSummaries(docId: string): Promise<SummaryRecord[]> {
+  return db().then(
+    (d) =>
+      new Promise<SummaryRecord[]>((resolve, reject) => {
+        const tx = d.transaction("summaries", "readonly");
+        const req = tx.objectStore("summaries").index("docId").getAll(docId);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      }),
+  );
+}
+
+export async function deleteSummary(key: string): Promise<void> {
+  await run("summaries", "readwrite", (s) => s.delete(key));
 }
 
 // -- directory handle (File System Access) ----------------------------------

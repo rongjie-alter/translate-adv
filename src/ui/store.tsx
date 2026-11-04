@@ -11,6 +11,7 @@ import type { ComponentChildren } from "preact";
 import { findPreset, type Preset } from "../llm/presets";
 import type { Calibration } from "../llm/estimate";
 import { OUTPUT_RATIO } from "../llm/estimate";
+import { RateLimiter, emptyState } from "../llm/limiter";
 import * as db from "../storage/db";
 import type { Settings, SourceRecord } from "../storage/db";
 import {
@@ -23,11 +24,19 @@ import {
 import * as fsa from "../storage/fsa";
 import { hashFile, type Book, type Lang } from "../scenario/model";
 import { parseBookHtml } from "../scenario/parseHtml";
+import { isBilingualHtml, parseBilingualHtml, type BilingualDoc } from "../summarize/bilingualHtml";
 import type { Job } from "../orchestrator/job";
 
 import { normalizeBookBase, type BookGroup } from "../storage/groups";
 
-export type View = "scan" | "translate" | "review" | "library" | "dictionary" | "settings";
+export type View =
+  | "scan"
+  | "translate"
+  | "review"
+  | "library"
+  | "summarize"
+  | "dictionary"
+  | "settings";
 
 export interface Toast {
   id: number;
@@ -42,6 +51,12 @@ export interface Store {
   jobs: Job[];
   artifacts: Artifact[];
   books: Map<string, Book>;
+  /**
+   * Dropped `.bilingual.html` files, kept for the Summarize screen only. They are not
+   * persisted: the file is the source of truth, and a synopsis made from one is stored
+   * under the same document id the Library would use.
+   */
+  bilingualDocs: BilingualDoc[];
   view: View;
   activeSourceId: string | null;
   folderName: string | null;
@@ -96,6 +111,8 @@ export interface Store {
   /** Key for `preset`, or for the active one. A retry may target another endpoint. */
   apiKey(preset?: Preset): string;
   calibrationFor(model: string, lang: Lang, preset?: Preset): Calibration;
+  /** A limiter on `preset`'s own persisted counters, never the active preset's. */
+  limiterFor(preset: Preset): RateLimiter;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -113,6 +130,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [books, setBooks] = useState<Map<string, Book>>(new Map());
+  const [bilingualDocs, setBilingualDocs] = useState<BilingualDoc[]>([]);
   const [view, setView] = useState<View>("scan");
   const [activeSourceId, setActiveSource] = useState<string | null>(null);
   const [folderName, setFolderName] = useState<string | null>(null);
@@ -184,6 +202,17 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
           }
           if (/\.tl\.json$/i.test(file.name) || /\.json$/i.test(file.name)) {
             importedArtifacts.push(parseArtifact(text, file.name));
+            continue;
+          }
+          if (isBilingualHtml(file.name, text)) {
+            // Not a book: parsing it as one would fuse each unit's two sides into one line.
+            const doc = parseBilingualHtml(file.name, text);
+            if (!doc.chapters.length) {
+              toast(`${file.name} has no chapters — is it a .bilingual.html from this app?`, "error");
+              continue;
+            }
+            setBilingualDocs((prev) => [...prev.filter((d) => d.file !== doc.file), doc]);
+            toast(`Loaded ${file.name} for summarizing: ${doc.chapters.length} chapter(s)`);
             continue;
           }
           const book = parseBookHtml(file.name, text);
@@ -506,6 +535,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     jobs,
     artifacts,
     books,
+    bilingualDocs,
     view,
     activeSourceId,
     folderName,
@@ -545,6 +575,13 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     activePreset: () => findPreset(settings.presets, settings.presetId),
     apiKey: (preset) =>
       settings.apiKeys[(preset ?? findPreset(settings.presets, settings.presetId)).baseUrl] ?? "",
+    limiterFor: (preset) =>
+      new RateLimiter(
+        preset.limits,
+        preset.quotaResetTz,
+        settings.limiter[preset.id] ?? emptyState(),
+        (s) => void saveSettings({ limiter: { ...settings.limiter, [preset.id]: s } }),
+      ),
     calibrationFor: (model, lang, preset) =>
       settings.calibration[`${model}:${lang}`] ?? {
         charsPerToken: (preset ?? findPreset(settings.presets, settings.presetId)).charsPerToken,
