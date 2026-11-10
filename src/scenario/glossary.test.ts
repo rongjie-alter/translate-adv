@@ -33,6 +33,24 @@ describe("countMentions", () => {
     expect(c.get("カイブツ")).toBe(1);
   });
 
+  it("does not count a key that sits wholly inside a longer key already claimed", () => {
+    const c = countMentions(["センセチア", "センセチア変身後"], ["センセチア変身後が現れた"]);
+    expect(c.get("センセチア変身後")).toBe(1);
+    expect(c.has("センセチア")).toBe(false);
+  });
+
+  it("also holds on a line carrying readings", () => {
+    const c = countMentions(["センセチア", "センセチア変身後"], ["センセチア変身後(へんしん)が現れた"]);
+    expect(c.get("センセチア変身後")).toBe(1);
+    expect(c.has("センセチア")).toBe(false);
+  });
+
+  it("still counts a short key that sits outside the claimed one on a line with readings", () => {
+    const c = countMentions(["センセチア", "センセチア変身後"], ["センセチア変身後(へんしん)とセンセチア"]);
+    expect(c.get("センセチア変身後")).toBe(1);
+    expect(c.get("センセチア")).toBe(1);
+  });
+
   it("does not match a katakana key inside a longer katakana word", () => {
     const c = countMentions(["アカシ"], ["アカシアの木", "アカシは笑った", "ヴァアカシ"]);
     expect(c.get("アカシ")).toBe(1);

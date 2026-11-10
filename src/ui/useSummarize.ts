@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { estimateTokens } from "../llm/estimate";
-import type { Preset } from "../llm/presets";
+import { apiKeyMissing, type Preset } from "../llm/presets";
 import * as db from "../storage/db";
 import type { SummaryRecord } from "../storage/db";
 import {
@@ -122,7 +122,7 @@ export function useSummarize() {
     async ({ doc, ids, preset, system, carryOver }: StartArgs) => {
       if (!ids.length) return;
       const apiKey = store.apiKey(preset);
-      if (!apiKey && !preset.baseUrl.includes("localhost")) {
+      if (apiKeyMissing(preset, apiKey)) {
         store.toast(`Add an API key for ${preset.label} in Settings first.`, "error");
         store.setView("settings");
         return;

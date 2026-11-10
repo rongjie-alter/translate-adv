@@ -47,9 +47,26 @@ export function isValuableTerm(key: string): boolean {
 const KATAKANA_KEY = /^[ァ-ヶー・]+$/;
 const KATAKANA_NEIGHBOUR = /[ァ-ヶー]/;
 
-/** Compact ruby `漢字(よみ)` -> `漢字`, so a name written with readings still matches. */
-function stripReadings(s: string): string {
-  return s.replace(/\([^()\n]*\)/g, "");
+/**
+ * Compact ruby `漢字(よみ)` -> `漢字`, so a name written with readings still matches.
+ * `at[i]` is where character `i` of `text` sits in `s` (`at[text.length]` is `s.length`),
+ * so a match in the stripped text can be claimed in the raw text too.
+ */
+function stripReadings(s: string): { text: string; at: number[] } {
+  let text = "";
+  const at: number[] = [];
+  let from = 0;
+  const push = (to: number) => {
+    for (let i = from; i < to; i++) at.push(i);
+    text += s.slice(from, to);
+  };
+  for (const m of s.matchAll(/\([^()\n]*\)/g)) {
+    push(m.index!);
+    from = m.index! + m[0].length;
+  }
+  push(s.length);
+  at.push(s.length);
+  return { text, at };
 }
 
 /** Source text of every translatable line, one per row. */
@@ -71,9 +88,11 @@ export function countMentions(keys: Iterable<string>, lines: string[]): Map<stri
   if (!ordered.length) return counts;
 
   const stripped = lines.map(stripReadings);
-  // [haystack, claimed]; a line is searched with readings stripped first, raw as fallback.
-  const claimed = [stripped.map((l) => new Uint8Array(l.length)), lines.map((l) => new Uint8Array(l.length))];
-  const hay = [stripped, lines];
+  // A line is searched with readings stripped first, raw as fallback. A claim made in the
+  // stripped text is mirrored onto the raw one, so the fallback cannot find a shorter key
+  // inside a longer key that has already been counted.
+  const claimed = [stripped.map((l) => new Uint8Array(l.text.length)), lines.map((l) => new Uint8Array(l.length))];
+  const hay = [stripped.map((l) => l.text), lines];
 
   for (const key of ordered) {
     const boundary = KATAKANA_KEY.test(key);
@@ -90,6 +109,7 @@ export function countMentions(keys: Iterable<string>, lines: string[]): Map<stri
             continue;
           }
           used.fill(1, at, end);
+          if (pass === 0) claimed[1][li].fill(1, stripped[li].at[at], stripped[li].at[end - 1] + 1);
           n++;
         }
       });

@@ -9,12 +9,15 @@ import { estimateJob, estimateTokens } from "../llm/estimate";
 import { assembleSystemPrompt, glossaryBlock } from "../llm/prompt";
 import { serializeChunk } from "../scenario/serialize";
 import { makeLabelMap } from "../scenario/labels";
-import { LANGS, LANG_LABEL, type Chapter, type GlossaryEntry } from "../scenario/model";
+import { LANGS, LANG_LABEL, type Book, type Chapter, type GlossaryEntry, type Lang } from "../scenario/model";
+import { apiKeyMissing, type Preset } from "../llm/presets";
+import { canTranslateNames, knownNames, translateNames } from "../names/translateNames";
 import { chapterGlossary } from "../scenario/glossary";
 import { scanUnknownNames } from "../scenario/parseHtml";
 import { jobId, jobProgress } from "../orchestrator/job";
 import { artifactKey } from "../storage/exchange";
 import { useActiveBook, useStore } from "./store";
+import { Waiting, waitState, type WaitState } from "./Waiting";
 import { chunksFor, type useTranslation } from "./useTranslation";
 
 export function ScanView({
@@ -146,6 +149,9 @@ export function ScanView({
             key={active.source.id + "|" + lang}
             book={active.book}
             lang={lang}
+            preset={preset}
+            note={active.source.note}
+            excluded={active.source.excludedTerms}
             saved={{
               ...(store.settings.dictionary?.[lang] ?? {}),
               ...(active.source.customNames?.[lang] ?? {}),
@@ -482,19 +488,135 @@ function formatDuration(seconds: number): string {
  * Keyed by `source.id + lang` so it remounts (and resets draft state) whenever the
  * file or target language changes. Values persist on blur, not per-keystroke, to avoid
  * hammering IndexedDB while the user is typing.
+ *
+ * The model's suggestions arrive as *drafts*: they fill the boxes but are saved only when
+ * the user commits them — by blurring a box, or with Save all — because a bad batch would
+ * otherwise be sent with every later translation request.
  */
 function NameScanner({
   book,
   lang,
+  preset,
+  note,
+  excluded,
   saved,
   onSave,
 }: {
-  book: import("../scenario/model").Book;
-  lang: import("../scenario/model").Lang;
+  book: Book;
+  lang: Lang;
+  preset: Preset;
+  note?: string;
+  excluded?: string[];
   saved: Record<string, string>;
   onSave: (display: string, name: string) => void;
 }) {
+  const store = useStore();
   const names = useMemo(() => scanUnknownNames(book, lang), [book, lang]);
+  /** What each box shows when it differs from what is saved: typed text and model drafts. */
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [wait, setWait] = useState<WaitState | null>(null);
+  const abort = useRef<AbortController | null>(null);
+  // The latest boxes, for a request that outlives the render it started in.
+  const live = useRef({ values, saved });
+  live.current = { values, saved };
+
+  const valueOf = (display: string) => values[display] ?? saved[display] ?? "";
+  // Rows the button may fill: nothing saved, nothing typed, no draft already waiting.
+  const targets = names.map((n) => n.display).filter((d) => !valueOf(d).trim());
+  const allowed = canTranslateNames(preset);
+
+  const translate = async () => {
+    const apiKey = store.apiKey(preset);
+    if (apiKeyMissing(preset, apiKey)) {
+      store.toast(`Add an API key for ${preset.label} in Settings first.`, "error");
+      store.setView("settings");
+      return;
+    }
+    const ctl = new AbortController();
+    abort.current = ctl;
+    setBusy(true);
+    setWait(null);
+    try {
+      const known = knownNames({ book, lang, custom: saved, excluded });
+      const res = await translateNames(
+        { names: targets, lang, note, known },
+        {
+          // The *chosen* preset's counter, not the active one.
+          limiter: store.limiterFor(preset),
+          apiKey,
+          baseUrl: preset.baseUrl,
+          model: preset.model,
+          maxOutputTokens: preset.limits.maxOutputTokens,
+          reasoningEffort: preset.reasoningEffort,
+          charsPerToken: store.calibrationFor(preset.model, lang, preset).charsPerToken,
+          onEvent: (e) => {
+            if (e.type === "waiting") setWait(waitState(e));
+            else if (e.type === "call") setWait(null);
+          },
+        },
+        ctl.signal,
+      );
+      // A box the user filled in while the request ran keeps what they typed.
+      const fresh = [...res.translations].filter(
+        ([d]) => !(live.current.values[d] ?? live.current.saved[d] ?? "").trim(),
+      );
+      const exact = fresh.filter(([d]) => known.has(d)).length;
+      setValues((v) => ({ ...v, ...Object.fromEntries(fresh) }));
+      setDrafts((d) => new Set([...d, ...fresh.map(([k]) => k)]));
+      if (res.error) {
+        store.toast(`Name translation stopped: ${res.error.message}`, "error");
+      } else if (res.missing.length) {
+        store.toast(
+          `Filled ${fresh.length} name(s); the model skipped ${res.missing.length}. Click again to retry those.`,
+          "error",
+        );
+      } else {
+        store.toast(
+          `Filled ${fresh.length} name(s) as drafts` +
+            (exact ? ` (${exact} from known names, ${fresh.length - exact} from the model)` : "") +
+            ". Check them, then Save all.",
+        );
+      }
+    } catch (e) {
+      if (ctl.signal.aborted) store.toast("Stopped.");
+      else store.toast((e as Error).message, "error");
+    } finally {
+      setBusy(false);
+      setWait(null);
+    }
+  };
+
+  /** Save a box if it differs from what is stored. Both save paths go through here, so both trim. */
+  const persist = (display: string) => {
+    const v = valueOf(display).trim();
+    if (v !== (saved[display] ?? "")) onSave(display, v);
+  };
+
+  const commit = (display: string) => {
+    setDrafts((d) => {
+      if (!d.has(display)) return d;
+      const next = new Set(d);
+      next.delete(display);
+      return next;
+    });
+    persist(display);
+  };
+
+  const saveAll = () => {
+    for (const d of drafts) persist(d);
+    setDrafts(new Set());
+  };
+
+  const discardAll = () => {
+    setValues((v) => {
+      const next = { ...v };
+      for (const d of drafts) delete next[d];
+      return next;
+    });
+    setDrafts(new Set());
+  };
 
   if (!names.length) {
     return (
@@ -510,14 +632,44 @@ function NameScanner({
         Unofficial character names — enter translations to include them as official (sent with every
         request and written into exported files):
       </p>
+      <div class="name-actions">
+        <button
+          disabled={busy || !allowed || !targets.length}
+          title={
+            allowed
+              ? "One request to the selected LLM. Names containing an official name are given it as context."
+              : "Pick Gemini Flash Lite (or Gemma) in the LLM menu — this is a small job for a cheap model."
+          }
+          onClick={() => void translate()}
+        >
+          {busy ? "Translating…" : `Translate ${targets.length} missing name${targets.length === 1 ? "" : "s"}`}
+        </button>
+        {busy ? <button onClick={() => abort.current?.abort(new Error("stopped by user"))}>Stop</button> : null}
+        {drafts.size ? (
+          <>
+            <button class="primary" disabled={busy} onClick={saveAll}>
+              Save all drafts ({drafts.size})
+            </button>
+            <button disabled={busy} onClick={discardAll}>
+              Discard
+            </button>
+          </>
+        ) : null}
+        {!allowed ? (
+          <span class="hint">Needs Gemini Flash Lite or Gemma in the LLM menu above.</span>
+        ) : null}
+      </div>
+      <Waiting wait={wait} />
       <div class="name-rows">
         {names.map((n) => (
           <NameRow
             key={n.display}
             display={n.display}
             occurrences={n.occurrences}
-            initial={saved[n.display] ?? ""}
-            onSave={(v) => onSave(n.display, v)}
+            value={valueOf(n.display)}
+            draft={drafts.has(n.display)}
+            onChange={(v) => setValues((cur) => ({ ...cur, [n.display]: v }))}
+            onCommit={() => commit(n.display)}
           />
         ))}
       </div>
@@ -528,15 +680,19 @@ function NameScanner({
 function NameRow({
   display,
   occurrences,
-  initial,
-  onSave,
+  value,
+  draft,
+  onChange,
+  onCommit,
 }: {
   display: string;
   occurrences: number;
-  initial: string;
-  onSave: (v: string) => void;
+  value: string;
+  /** A model suggestion not saved yet. */
+  draft: boolean;
+  onChange: (v: string) => void;
+  onCommit: () => void;
 }) {
-  const [value, setValue] = useState(initial);
   return (
     <div class="name-row">
       <span class="name-jp">
@@ -545,14 +701,13 @@ function NameRow({
       </span>
       <span class="name-eq">=</span>
       <input
-        class="name-input"
+        class={draft ? "name-input draft" : "name-input"}
         type="text"
         value={value}
         placeholder="translated name"
-        onInput={(e) => setValue((e.target as HTMLInputElement).value)}
-        onBlur={() => {
-          if (value !== initial) onSave(value);
-        }}
+        title={draft ? "Suggested, not saved yet — click away to save" : undefined}
+        onInput={(e) => onChange((e.target as HTMLInputElement).value)}
+        onBlur={onCommit}
       />
     </div>
   );

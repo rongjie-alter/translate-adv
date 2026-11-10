@@ -47,6 +47,12 @@ export interface Preset {
   /** Where to get a key; shown in Settings. */
   keyUrl?: string;
   builtin?: boolean;
+  /**
+   * Cheap enough for small side jobs (translating a name list). Read through
+   * {@link isCheapPreset}, not off a stored preset: settings keep their own copies of the
+   * built-ins, which predate this flag.
+   */
+  cheap?: boolean;
 }
 
 export const PRESETS: Preset[] = [
@@ -74,6 +80,7 @@ export const PRESETS: Preset[] = [
     quotaResetTz: "America/Los_Angeles",
     keyUrl: "https://aistudio.google.com/api-keys",
     builtin: true,
+    cheap: true,
   },
   {
     id: "gemma4-31b",
@@ -85,6 +92,7 @@ export const PRESETS: Preset[] = [
     quotaResetTz: "America/Los_Angeles",
     keyUrl: "https://aistudio.google.com/api-keys",
     builtin: true,
+    cheap: true,
   },
   {
     id: "mock",
@@ -95,6 +103,7 @@ export const PRESETS: Preset[] = [
     charsPerToken: 1.0,
     quotaResetTz: "UTC",
     builtin: true,
+    cheap: true,
   },
 ];
 
@@ -102,4 +111,19 @@ export const DEFAULT_PRESET_ID = "gemini-flash-lite";
 
 export function findPreset(presets: Preset[], id: string): Preset {
   return presets.find((p) => p.id === id) ?? presets[0];
+}
+
+/** Whether `preset` is one of the built-ins marked {@link Preset.cheap}. Custom presets never are. */
+export function isCheapPreset(preset: Pick<Preset, "id">): boolean {
+  return PRESETS.some((p) => p.id === preset.id && p.cheap);
+}
+
+/** A local endpoint (the mock server) needs no API key. */
+export function isLocalPreset(preset: Pick<Preset, "baseUrl">): boolean {
+  return preset.baseUrl.includes("localhost");
+}
+
+/** True when a request to `preset` cannot go out: no key, and not a keyless local endpoint. */
+export function apiKeyMissing(preset: Pick<Preset, "baseUrl">, apiKey: string): boolean {
+  return !apiKey && !isLocalPreset(preset);
 }

@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { estimateTokens } from "../llm/estimate";
-import type { Preset } from "../llm/presets";
+import { apiKeyMissing, type Preset } from "../llm/presets";
 import { assembleSystemPrompt } from "../llm/prompt";
 import { chunkNodes, type Chunk } from "../orchestrator/chunker";
 import { isComplete, jobId, type Job, type JobChunk } from "../orchestrator/job";
@@ -135,7 +135,7 @@ export function useTranslation() {
     if (!chapter) return;
 
     const apiKey = store.apiKey(preset);
-    if (!apiKey && !preset.baseUrl.includes("localhost")) {
+    if (apiKeyMissing(preset, apiKey)) {
       store.toast("Add an API key for this endpoint in Settings first.", "error");
       store.setView("settings");
       return;

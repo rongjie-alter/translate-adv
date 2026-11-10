@@ -5,7 +5,7 @@
  * and users can add their own OpenAI-compatible endpoints.
  */
 import { useState } from "preact/hooks";
-import type { Preset } from "../llm/presets";
+import { isLocalPreset, type Preset } from "../llm/presets";
 import { DEFAULT_SYSTEM_PROMPT } from "../llm/prompt";
 import { LANGS, LANG_LABEL, type Lang } from "../scenario/model";
 import { useStore } from "./store";
@@ -103,7 +103,7 @@ export function SettingsView() {
           <input
             type={showKey ? "text" : "password"}
             value={settings.apiKeys[preset.baseUrl] ?? ""}
-            placeholder={preset.baseUrl.includes("localhost") ? "not needed for the mock server" : "paste your key"}
+            placeholder={isLocalPreset(preset) ? "not needed for the mock server" : "paste your key"}
             onInput={(e) =>
               void store.saveSettings({
                 apiKeys: { ...settings.apiKeys, [preset.baseUrl]: value(e) },

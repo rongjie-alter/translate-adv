@@ -167,6 +167,30 @@ class Handler(BaseHTTPRequestHandler):
       n_lines = len(body.group(1).split("\n")) if body else 0
       content = (f"(mock synopsis of {title.group(1) if title else '?'}: {n_lines} line(s)"
                  f"{', continuing from the previous chapter' if carried else ''}.)")
+    if "<names>" in user:
+      # A speaker-name request: reuse any official pair from <known_names> that sits inside
+      # a name, so the substring context is visibly honoured; tag the rest like a translation.
+      known = re.search(r"<known_names>\n(.*?)\n</known_names>", user, re.S)
+      pairs = []
+      for kl in (known.group(1).split("\n") if known else []):
+        jp, sep, tl = kl.partition(" = ")
+        if sep:
+          pairs.append((jp, tl))
+      pairs.sort(key=lambda p: -len(p[0]))
+      tag = {"en": "EN", "zh-hans": "简", "zh-hant": "繁"}.get(lang, "TL")
+      out = []
+      names_block = re.search(r"<names>\n(.*?)\n</names>", user, re.S)
+      for line in (names_block.group(1).split("\n") if names_block else []):
+        m = ID_LINE.match(line.strip())
+        if not m:
+          continue
+        if cfg.drop_rate and random.random() < cfg.drop_rate:
+          continue
+        name = m.group(2)
+        for jp, tl in pairs:
+          name = name.replace(jp, tl)
+        out.append(f"{m.group(1)} [{tag}] {name}")
+      content = "\n".join(out)
     finish = "stop"
     if cfg.truncate and random.random() < cfg.truncate:
       content = content[: max(1, len(content) // 2)]

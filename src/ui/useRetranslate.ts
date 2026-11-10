@@ -8,7 +8,7 @@
  * otherwise be no way back.
  */
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
-import type { Preset } from "../llm/presets";
+import { apiKeyMissing, type Preset } from "../llm/presets";
 import {
   planRetranslate,
   retranslateSystemPrompt,
@@ -129,7 +129,7 @@ export function useRetranslate() {
       if (!uids.length) return;
       const key = artifactKey(artifact);
       const apiKey = store.apiKey(preset);
-      if (!apiKey && !preset.baseUrl.includes("localhost")) {
+      if (apiKeyMissing(preset, apiKey)) {
         store.toast(`Add an API key for ${preset.label} in Settings first.`, "error");
         store.setView("settings");
         return;
