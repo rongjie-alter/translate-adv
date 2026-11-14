@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "preact/hooks";
 import { LANGS, LANG_LABEL, type Lang } from "../scenario/model";
+import { DICTIONARY_FILE, dictionaryEntryCount } from "../storage/fsa";
 import { useStore } from "./store";
 
 export function DictionaryView() {
@@ -24,13 +25,7 @@ export function DictionaryView() {
     );
   }, [currentLangEntries, search]);
 
-  const totalAllLangs = useMemo(() => {
-    let count = 0;
-    for (const l of LANGS) {
-      count += Object.keys(dictionary[l] ?? {}).length;
-    }
-    return count;
-  }, [dictionary]);
+  const totalAllLangs = useMemo(() => dictionaryEntryCount(dictionary), [dictionary]);
 
   const handleAdd = (e?: Event) => {
     if (e) e.preventDefault();
@@ -66,7 +61,7 @@ export function DictionaryView() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `dictionary.json`;
+    a.download = DICTIONARY_FILE;
     a.click();
     URL.revokeObjectURL(url);
     store.toast("Exported global dictionary to JSON.");
@@ -128,6 +123,8 @@ export function DictionaryView() {
           <span class="badge secondary">{totalAllLangs} total</span>
         </div>
       </div>
+
+      {store.folderName ? <BackupStatus /> : null}
 
       <div class="row dictionary-toolbar">
         <select
@@ -225,6 +222,37 @@ export function DictionaryView() {
         )}
       </div>
     </section>
+  );
+}
+
+/** Backup state for `dictionary.json` in the connected folder. */
+function BackupStatus() {
+  const { folderName, dictBackup, backupDictionaryNow } = useStore();
+  const target = `${folderName}/${DICTIONARY_FILE}`;
+  let text: string;
+  switch (dictBackup.status) {
+    case "ok":
+      text = `Backed up to ${target}${dictBackup.at ? ` · ${new Date(dictBackup.at).toLocaleTimeString()}` : ""}`;
+      break;
+    case "empty":
+      text = `Dictionary is empty — nothing to back up to ${folderName} yet.`;
+      break;
+    case "paused":
+      text = `Backup paused — folder access was refused or has expired. Click “Back up now” to grant it again.`;
+      break;
+    case "error":
+      text = `Backup failed: ${dictBackup.message ?? "unknown error"}`;
+      break;
+    default:
+      text = `Edits are backed up to ${target} automatically.`;
+  }
+  const bad = dictBackup.status === "paused" || dictBackup.status === "error";
+  return (
+    <div class={`row dictionary-backup${bad ? " warn" : ""}`}>
+      <span class="hint">{text}</span>
+      <span class="spacer" />
+      <button onClick={() => void backupDictionaryNow()}>Back up now</button>
+    </div>
   );
 }
 

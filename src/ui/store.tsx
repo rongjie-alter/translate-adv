@@ -6,7 +6,7 @@
  * whole app is four screens over five object stores.
  */
 import { createContext } from "preact";
-import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { findPreset, type Preset } from "../llm/presets";
 import type { Calibration } from "../llm/estimate";
@@ -44,6 +44,21 @@ export interface Toast {
   message: string;
 }
 
+/** Where the dictionary backup in the connected folder stands. */
+export interface DictBackupState {
+  /**
+   * `idle`: nothing attempted yet. `ok`: file is current (`at` = when). `empty`: the
+   * dictionary is empty and the folder has no file, so nothing was written. `paused`: folder permission
+   * was refused or revoked. `error`: the write itself failed (`message`).
+   */
+  status: "idle" | "ok" | "empty" | "paused" | "error";
+  at?: number;
+  message?: string;
+}
+
+/** Quiet period after a dictionary edit before the backup file is rewritten. */
+const DICT_BACKUP_DEBOUNCE_MS = 1500;
+
 export interface Store {
   ready: boolean;
   settings: Settings;
@@ -62,6 +77,7 @@ export interface Store {
   folderName: string | null;
   /** Names only, from the last `refreshFolderFiles()` — nothing is read or parsed. */
   folderFiles: string[];
+  dictBackup: DictBackupState;
   toasts: Toast[];
   conflicts: MergeConflict[];
   /** Filenames just uploaded that lack the consolidated `#chara-meta` JSON dict. */
@@ -99,6 +115,8 @@ export interface Store {
   removeArtifact(key: string): Promise<void>;
   connectFolder(): Promise<void>;
   disconnectFolder(): Promise<void>;
+  /** Write `dictionary.json` to the connected folder now (a click can re-request permission). */
+  backupDictionaryNow(): Promise<void>;
   syncFolder(): Promise<void>;
   refreshFolderFiles(): Promise<void>;
   loadFolderGroup(group: Pick<BookGroup, "book" | "lang" | "artifactFiles" | "sourceFile">): Promise<void>;
@@ -135,6 +153,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
   const [activeSourceId, setActiveSource] = useState<string | null>(null);
   const [folderName, setFolderName] = useState<string | null>(null);
   const [folderFiles, setFolderFiles] = useState<string[]>([]);
+  const [dictBackup, setDictBackup] = useState<DictBackupState>({ status: "idle" });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [conflicts, setConflicts] = useState<MergeConflict[]>([]);
   const [metaWarningFiles, setMetaWarningFiles] = useState<string[]>([]);
@@ -449,20 +468,89 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     }
   }, [toast]);
 
+  // Read through refs so a backup scheduled earlier never writes a stale dictionary, and
+  // so connecting a folder doesn't re-run the auto-backup effect below.
+  const dictionaryRef = useRef(settings.dictionary);
+  dictionaryRef.current = settings.dictionary;
+  const folderNameRef = useRef(folderName);
+  folderNameRef.current = folderName;
+
+  const runDictBackup = useCallback(async () => {
+    try {
+      const result = await fsa.backupDictionary(dictionaryRef.current ?? {});
+      if (result === "no-folder") {
+        // A timer that outlives a disconnect has nothing to report; otherwise the folder
+        // vanished under us and a stale "Backed up" banner would be a lie.
+        if (folderNameRef.current) {
+          setDictBackup((p) => ({
+            ...p,
+            status: "error",
+            message: "the connected folder is no longer available — disconnect it and connect it again.",
+          }));
+        }
+        return;
+      }
+      if (result === "no-permission") setDictBackup((p) => ({ ...p, status: "paused" }));
+      else if (result === "empty") setDictBackup((p) => ({ ...p, status: "empty" }));
+      else setDictBackup((p) => ({ status: "ok", at: result === "written" ? Date.now() : p.at ?? Date.now() }));
+    } catch (e) {
+      setDictBackup((p) => ({ ...p, status: "error", message: (e as Error).message }));
+    }
+  }, []);
+
+  // Auto-backup after dictionary edits. The first run after load only records the
+  // baseline, so merely opening the app never touches the folder. `dictionary` keeps its
+  // identity across unrelated settings changes (limiter counters, keys), so those don't fire it.
+  // `connectFolder` runs its own backup, after pulling the folder's entries.
+  const dictBaseline = useRef<Settings["dictionary"] | null>(null);
+  useEffect(() => {
+    if (!ready) return;
+    if (dictBaseline.current === null) {
+      dictBaseline.current = settings.dictionary ?? {};
+      return;
+    }
+    if (!folderNameRef.current || settings.dictionary === dictBaseline.current) return;
+    const t = setTimeout(() => void runDictBackup(), DICT_BACKUP_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [ready, settings.dictionary, runDictBackup]);
+
+  // A newly connected folder may already hold a dictionary.json from another browser or
+  // person. Fold its entries into the local dictionary (local wins on a shared key) so the
+  // backup that follows is a union rather than one side clobbering the other.
+  const pullDictionaryFromFolder = useCallback(async () => {
+    try {
+      const remote = await fsa.readDictionary();
+      if (!remote) return;
+      const added = fsa.dictionaryAdditions(dictionaryRef.current ?? {}, remote);
+      if (!added) return;
+      setSettings((prev) => {
+        const next = { ...prev, dictionary: fsa.mergeDictionaries(remote, prev.dictionary ?? {}) };
+        void db.saveSettings(next);
+        return next;
+      });
+      toast(`Merged ${added} name${added === 1 ? "" : "s"} from ${fsa.DICTIONARY_FILE} in the folder into the dictionary.`);
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
+  }, [toast]);
+
   const connectFolder = useCallback(async () => {
     try {
       setFolderName(await fsa.pickFolder());
       toast("Folder connected — finished chapters will be written there automatically.");
       await refreshFolderFiles();
+      await pullDictionaryFromFolder();
+      await runDictBackup();
     } catch (e) {
       if ((e as Error).name !== "AbortError") toast((e as Error).message, "error");
     }
-  }, [toast, refreshFolderFiles]);
+  }, [toast, refreshFolderFiles, pullDictionaryFromFolder, runDictBackup]);
 
   const disconnectFolder = useCallback(async () => {
     await fsa.forgetFolder();
     setFolderName(null);
     setFolderFiles([]);
+    setDictBackup({ status: "idle" });
   }, []);
 
   const syncFolder = useCallback(async () => {
@@ -540,6 +628,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     activeSourceId,
     folderName,
     folderFiles,
+    dictBackup,
     toasts,
     conflicts,
     metaWarningFiles,
@@ -565,6 +654,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     removeArtifact,
     connectFolder,
     disconnectFolder,
+    backupDictionaryNow: runDictBackup,
     syncFolder,
     refreshFolderFiles,
     loadFolderGroup,

@@ -10,7 +10,8 @@
  * but permission is not: browsers re-prompt each session, so every entry point
  * re-requests it and degrades gracefully when refused.
  */
-import { clearHandle, getHandle, putHandle } from "./db";
+import { clearHandle, getHandle, putHandle, type DictionaryData } from "./db";
+import type { Lang } from "../scenario/model";
 import { artifactFileName, parseArtifact, serializeArtifact, type Artifact } from "./exchange";
 
 type Permission = "granted" | "denied" | "prompt";
@@ -70,11 +71,16 @@ export async function hasFolder(): Promise<boolean> {
   return !!(cached ?? (await getHandle<DirectoryHandle>()));
 }
 
+async function resolveHandle(): Promise<DirectoryHandle | null> {
+  const handle = cached ?? (await getHandle<DirectoryHandle>());
+  if (handle) cached = handle;
+  return handle ?? null;
+}
+
 /** Resolve the handle and make sure we may write to it; null when refused. */
 async function writable(): Promise<DirectoryHandle | null> {
-  const handle = cached ?? (await getHandle<DirectoryHandle>());
+  const handle = await resolveHandle();
   if (!handle) return null;
-  cached = handle;
   const opts = { mode: "readwrite" } as const;
   if ((await handle.queryPermission(opts)) === "granted") return handle;
   return (await handle.requestPermission(opts)) === "granted" ? handle : null;
@@ -104,6 +110,130 @@ export async function readFile(name: string): Promise<string> {
 
 export async function readArtifactsByNames(names: string[]): Promise<Artifact[]> {
   return readArtifactsByNamesFrom(await requireFolder(), names);
+}
+
+// -- dictionary backup ------------------------------------------------------
+
+/** Same name and shape as the Dictionary screen's "Export JSON", so Import JSON reads it. */
+export const DICTIONARY_FILE = "dictionary.json";
+
+export type BackupResult = "written" | "unchanged" | "empty" | "no-permission" | "no-folder";
+
+export function dictionaryEntryCount(dict: DictionaryData): number {
+  let n = 0;
+  for (const map of Object.values(dict)) n += Object.keys(map ?? {}).length;
+  return n;
+}
+
+/** Union of two dictionaries; where both have a key, `over` wins. */
+export function mergeDictionaries(base: DictionaryData, over: DictionaryData): DictionaryData {
+  const out: DictionaryData = {};
+  for (const lang of Array.from(new Set([...Object.keys(base), ...Object.keys(over)])) as Lang[]) {
+    out[lang] = { ...base[lang], ...over[lang] };
+  }
+  return out;
+}
+
+/** How many entries of `extra` are missing from `base`. */
+export function dictionaryAdditions(base: DictionaryData, extra: DictionaryData): number {
+  let n = 0;
+  for (const [lang, map] of Object.entries(extra)) {
+    for (const key of Object.keys(map ?? {})) {
+      if (!(key in (base[lang as Lang] ?? {}))) n++;
+    }
+  }
+  return n;
+}
+
+function parseDictionaryBackup(text: string): DictionaryData {
+  const bad = () =>
+    new Error(`${DICTIONARY_FILE} in the folder is not a dictionary backup, so it was left untouched.`);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw bad();
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw bad();
+  const out: DictionaryData = {};
+  for (const [lang, map] of Object.entries(raw)) {
+    if (!map || typeof map !== "object" || Array.isArray(map)) throw bad();
+    const clean: Record<string, string> = {};
+    for (const [key, value] of Object.entries(map)) {
+      if (typeof value === "string" && key.trim() && value.trim()) clean[key] = value;
+    }
+    out[lang as Lang] = clean;
+  }
+  return out;
+}
+
+/** The raw backup text, or null when the folder has none yet. */
+async function readDictionaryText(dir: DirectoryHandle): Promise<string | null> {
+  try {
+    const text = await readFileIn(dir, DICTIONARY_FILE);
+    return text.trim() ? text : null;
+  } catch (e) {
+    if ((e as Error).name === "NotFoundError") return null;
+    throw e;
+  }
+}
+
+/** The folder's `dictionary.json`, or null if there is none. Throws if it isn't a dictionary. */
+export async function readDictionaryFrom(dir: DirectoryHandle): Promise<DictionaryData | null> {
+  const text = await readDictionaryText(dir);
+  return text === null ? null : parseDictionaryBackup(text);
+}
+
+export async function readDictionary(): Promise<DictionaryData | null> {
+  return readDictionaryFrom(await requireFolder());
+}
+
+/**
+ * Write the dictionary as `dictionary.json`, merged into what the folder already holds.
+ *
+ * The file may come from another browser or person, so it is never simply replaced: its
+ * entries are kept and ours win on a shared key. That also means an empty or smaller local
+ * dictionary can't shrink the backup. The cost is that deletions don't propagate — a name
+ * removed locally stays in the file until it is edited out by hand. A file that is not
+ * valid is left alone and reported rather than overwritten.
+ */
+export async function backupDictionaryTo(
+  dir: DirectoryHandle,
+  dict: DictionaryData,
+): Promise<"written" | "unchanged" | "empty"> {
+  const existingText = await readDictionaryText(dir);
+  const existing = existingText === null ? {} : parseDictionaryBackup(existingText);
+  const merged = mergeDictionaries(existing, dict);
+  if (dictionaryEntryCount(merged) === 0) return "empty";
+  const text = JSON.stringify(merged, null, 2);
+  if (text === existingText) return "unchanged";
+  await writeFileIn(dir, DICTIONARY_FILE, text);
+  return "written";
+}
+
+/**
+ * Back the dictionary up to the connected folder.
+ *
+ * Auto-backups run without a click, and a browser may have revoked the folder since the
+ * last session, so a refused or impossible permission request is a result, not an error.
+ * Everything else (handle lookup, reads, writes) still throws.
+ */
+export async function backupDictionary(dict: DictionaryData): Promise<BackupResult> {
+  // Looking the handle up and querying its permission can genuinely fail (IndexedDB
+  // blocked, a stale handle): those throw. Only a refused or impossible *request* is a result.
+  const dir = await resolveHandle();
+  if (!dir) return "no-folder";
+  const opts = { mode: "readwrite" } as const;
+  let state = await dir.queryPermission(opts);
+  if (state !== "granted") {
+    try {
+      state = await dir.requestPermission(opts);
+    } catch {
+      return "no-permission"; // no user activation: an auto-backup can't prompt
+    }
+  }
+  if (state !== "granted") return "no-permission";
+  return backupDictionaryTo(dir, dict);
 }
 
 /**
