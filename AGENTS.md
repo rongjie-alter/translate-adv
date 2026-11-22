@@ -221,8 +221,39 @@ remaining chunk identically, so stopping preserves the quota for a later working
 
 A `.tl.json` (`exchange.ts`) carries its own source text and branch markers, so `bilingual.ts` can
 combine files from other people with neither the original `.book.html` nor an API key. That is the
-whole point of the sharing model. Merge resolves duplicates by completeness then recency, and flags
-a `srcHash` mismatch rather than silently merging two versions of the book.
+whole point of the sharing model.
+
+### Importing: plan, then ask only when needed
+
+Every way translations enter the browser (drag-drop `.tl.json`/bundle, Library **Import from
+folder**, **Load into browser database**) goes through `importArtifacts` in `store.tsx`, which
+builds a plan with `storage/importPlan.ts` and applies it at once unless something needs a
+decision; then `ImportConflictDialog` (`ui/ConflictDialog.tsx`) opens. Cancel writes nothing.
+
+- Lines merge one by one, matched by unit id, which is only valid within one source version. A
+  `srcHash` mismatch is therefore a whole-chapter choice (default: keep mine), and so is a
+  missing hash on either side — it proves nothing about the version.
+- Automatic: a line empty on one side takes the filled one; lines equal after `cleanUnits` (an
+  echoed `Name：`/`>alias`) count as identical. A real clash suggests the newer side: the browser
+  line's `UnitRecord.at`, else the job's `updatedAt`, else the artifact's `generatedAt`, against
+  the file's `generatedAt`; a tie keeps mine.
+- A merged artifact's `generatedAt` is the newer of the two sides, not now: untouched lines with
+  no `UnitRecord.at` fall back to it, and stamping now would make them look newer than they are.
+- Applied lines go through `putUnits(..., { keepPrevious: true, at: file.generatedAt })`, seeding a
+  row from the old artifact text first so the import is revertable, and are stamped with the
+  *file's* time, not now, so a later import compares against the line's real age.
+- Changed artifacts are written to the connected folder; for folder-origin imports only merged
+  chapters are, since the rest are already there. `mergeArtifacts` (whole-chapter pick) is no
+  longer used by the store.
+
+The dictionary works the same way through `storage/dictPlan.ts` and `DictConflictDialog`. Import
+JSON never deletes and keeps the browser's value on a clash. **Back up to folder** reconciles with
+`dictionary.json` in the Library folder and writes the result to *both* sides; an entry only in the
+file defaults to dropped, since without deletion history it may be one the user deleted — except
+in a language the browser has no entries for (a fresh or cleared profile), where it defaults to
+kept, so a backup never becomes a wipe. The file
+is written before the browser, so a failed write changes nothing. Auto-saved `.tl.json` and
+bilingual HTML writes still overwrite without asking.
 
 ### Token estimation
 

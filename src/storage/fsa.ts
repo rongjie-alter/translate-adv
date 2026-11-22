@@ -94,6 +94,27 @@ export async function writeCombined(name: string, html: string): Promise<void> {
   await writeFileIn(await requireFolder(), name, html);
 }
 
+/** The dictionary backup, in the same folder as the translations. */
+export const DICTIONARY_FILE = "dictionary.json";
+
+/** The backup's text, or null when there is none yet. */
+export async function readDictionaryText(): Promise<string | null> {
+  return readDictionaryTextFrom(await requireFolder());
+}
+
+export async function writeDictionary(text: string): Promise<void> {
+  await writeFileIn(await requireFolder(), DICTIONARY_FILE, text);
+}
+
+export async function readDictionaryTextFrom(dir: DirectoryHandle): Promise<string | null> {
+  try {
+    return await readFileIn(dir, DICTIONARY_FILE);
+  } catch (e) {
+    if ((e as Error).name === "NotFoundError") return null;
+    throw e;
+  }
+}
+
 export async function readArtifacts(): Promise<Artifact[]> {
   return readArtifactsFrom(await requireFolder());
 }

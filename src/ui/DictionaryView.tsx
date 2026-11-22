@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from "preact/hooks";
 import { LANGS, LANG_LABEL, type Lang } from "../scenario/model";
+import { parseDictionaryFile, serializeDictionary } from "../storage/dictPlan";
+import * as fsa from "../storage/fsa";
 import { useStore } from "./store";
 
 export function DictionaryView() {
@@ -60,7 +62,7 @@ export function DictionaryView() {
   };
 
   const handleExportJson = () => {
-    const blob = new Blob([JSON.stringify(dictionary, null, 2)], {
+    const blob = new Blob([serializeDictionary(dictionary)], {
       type: "application/json",
     });
     const url = URL.createObjectURL(blob);
@@ -75,28 +77,17 @@ export function DictionaryView() {
   const handleImportJson = (e: Event) => {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
+    void (async () => {
       try {
-        const text = evt.target?.result as string;
-        const parsed = JSON.parse(text);
-        let count = 0;
-        if (typeof parsed === "object" && parsed !== null) {
-          // Could be full dictionary { en: {...}, "zh-hans": {...} } or a flat mapping { "name": "tl" }
-          const isFlat = !LANGS.some((l) => l in parsed);
-          if (isFlat) {
-            count = await store.importDictionary({ [lang]: parsed });
-          } else {
-            count = await store.importDictionary(parsed);
-          }
-          store.toast(`Successfully imported ${count} name translation(s).`);
-        }
+        // The per-language shape Export JSON writes, or a flat { name: translation } map
+        // for the language shown.
+        const data = parseDictionaryFile(await file.text(), lang);
+        await store.importDictionary(data, `from ${file.name}`);
       } catch (err) {
-        store.toast(`Failed to parse dictionary JSON: ${(err as Error).message}`, "error");
+        store.toast(`${file.name} is ${(err as Error).message}.`, "error");
       }
       (e.target as HTMLInputElement).value = "";
-    };
-    reader.readAsText(file);
+    })();
   };
 
   const handleClear = async () => {
@@ -160,6 +151,14 @@ export function DictionaryView() {
         <button onClick={() => importFileRef.current?.click()} title="Import dictionary from JSON file">
           Import JSON…
         </button>
+        {fsa.isSupported() ? (
+          <button
+            onClick={() => void store.backupDictionary()}
+            title={`Save every language to ${fsa.DICTIONARY_FILE} in the connected folder, asking about any differences`}
+          >
+            {store.folderName ? `Back up to ${store.folderName}` : "Back up to folder…"}
+          </button>
+        ) : null}
         <input
           ref={importFileRef}
           type="file"
@@ -213,7 +212,7 @@ export function DictionaryView() {
             <tbody>
               {filteredEntries.map(({ jp, tl }) => (
                 <DictionaryRow
-                  key={jp}
+                  key={`${jp}\u0000${tl}`}
                   jp={jp}
                   tl={tl}
                   onSave={(val) => void store.updateDictionaryName(lang, jp, val)}

@@ -6,7 +6,7 @@
  * whole app is four screens over five object stores.
  */
 import { createContext } from "preact";
-import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { findPreset, type Preset } from "../llm/presets";
 import type { Calibration } from "../llm/estimate";
@@ -14,14 +14,31 @@ import { OUTPUT_RATIO } from "../llm/estimate";
 import { RateLimiter, emptyState } from "../llm/limiter";
 import * as db from "../storage/db";
 import type { Settings, SourceRecord } from "../storage/db";
-import {
-  artifactKey,
-  mergeArtifacts,
-  parseArtifact,
-  type Artifact,
-  type MergeConflict,
-} from "../storage/exchange";
+import { artifactKey, parseArtifact, type Artifact } from "../storage/exchange";
 import * as fsa from "../storage/fsa";
+import {
+  defaultChoices,
+  describeImport,
+  hasDecisions,
+  planImport,
+  resolveImport,
+  type ChapterPlan,
+  type ImportChoices,
+} from "../storage/importPlan";
+import {
+  defaultDictChoices,
+  describeDict,
+  hasDictDecisions,
+  parseDictionaryFile,
+  planDictBackup,
+  planDictImport,
+  resolveDict,
+  serializeDictionary,
+  summarizeDict,
+  type DictChoices,
+  type DictionaryData,
+  type DictPlan,
+} from "../storage/dictPlan";
 import { hashFile, type Book, type Lang } from "../scenario/model";
 import { parseBookHtml } from "../scenario/parseHtml";
 import { isBilingualHtml, parseBilingualHtml, type BilingualDoc } from "../summarize/bilingualHtml";
@@ -44,6 +61,20 @@ export interface Toast {
   message: string;
 }
 
+/** An import that needs the user's decisions before anything is written. */
+export interface PendingImport {
+  plan: ChapterPlan[];
+  /** What is being imported, for the dialog title. */
+  label: string;
+  /** The files came from the connected folder, so only merged chapters are written back. */
+  fromFolder: boolean;
+}
+
+export interface PendingDict {
+  plan: DictPlan;
+  label: string;
+}
+
 export interface Store {
   ready: boolean;
   settings: Settings;
@@ -63,7 +94,8 @@ export interface Store {
   /** Names only, from the last `refreshFolderFiles()` — nothing is read or parsed. */
   folderFiles: string[];
   toasts: Toast[];
-  conflicts: MergeConflict[];
+  pendingImport: PendingImport | null;
+  pendingDict: PendingDict | null;
   /** Filenames just uploaded that lack the consolidated `#chara-meta` JSON dict. */
   metaWarningFiles: string[];
   /** `artifactKey` of the chapter open on the Review screen. */
@@ -92,7 +124,10 @@ export interface Store {
   updateDictionaryName(lang: Lang, display: string, name: string): Promise<void>;
   deleteDictionaryName(lang: Lang, display: string): Promise<void>;
   importCustomNamesToDictionary(): Promise<number>;
-  importDictionary(data: Partial<Record<Lang, Record<string, string>>>): Promise<number>;
+  /** Plan an import; applies at once unless an entry clashes, else opens the dialog. */
+  importDictionary(data: DictionaryData, label: string): Promise<void>;
+  /** Reconcile with `dictionary.json` in the connected folder, writing both sides. */
+  backupDictionary(): Promise<void>;
   clearDictionary(lang: Lang): Promise<void>;
   refreshJobs(): Promise<void>;
   saveArtifact(a: Artifact): Promise<void>;
@@ -105,7 +140,10 @@ export interface Store {
   /** Deletes jobs, units, and artifacts for one book+language. Leaves the scanned source alone. */
   freeBook(book: string, lang: Lang): Promise<void>;
   toast(message: string, kind?: Toast["kind"]): void;
-  dismissConflicts(): void;
+  applyPendingImport(choices: ImportChoices): Promise<void>;
+  cancelPendingImport(): void;
+  applyPendingDict(choices: DictChoices): Promise<void>;
+  cancelPendingDict(): void;
   dismissMetaWarning(): void;
   activePreset(): Preset;
   /** Key for `preset`, or for the active one. A retry may target another endpoint. */
@@ -136,7 +174,10 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
   const [folderName, setFolderName] = useState<string | null>(null);
   const [folderFiles, setFolderFiles] = useState<string[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [conflicts, setConflicts] = useState<MergeConflict[]>([]);
+  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  /** True from the start of planning an import until it is applied or cancelled. */
+  const importBusy = useRef(false);
+  const [pendingDict, setPendingDict] = useState<PendingDict | null>(null);
   const [metaWarningFiles, setMetaWarningFiles] = useState<string[]>([]);
   const [reviewKey, setReviewKey] = useState<string | null>(null);
   const [reviewSelection, setReviewSelection] = useState<ReadonlySet<string>>(new Set());
@@ -184,9 +225,97 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     });
   }, []);
 
+  /** Write what an import resolved to: unit rows (revertable), artifacts, then the folder. */
+  const applyImport = useCallback(
+    async (pending: PendingImport, choices: ImportChoices) => {
+      const result = resolveImport(pending.plan, choices, Date.now());
+      for (const w of result.unitWrites) {
+        // Seed a row for lines that only lived in the artifact, so the import can be reverted.
+        const rows = new Set((await db.getUnitRecords(w.key)).map((r) => r.uid));
+        const seed = new Map([...w.previous].filter(([uid]) => !rows.has(uid)));
+        if (seed.size) await db.putUnits(w.key, seed);
+        await db.putUnits(w.key, w.texts, { keepPrevious: true, model: w.model, at: w.at });
+      }
+      for (const { artifact } of result.artifacts) await db.putArtifact(artifact);
+      if (result.artifacts.length) {
+        const changed = new Map(result.artifacts.map(({ artifact }) => [artifactKey(artifact), artifact]));
+        setArtifacts((prev) => [...prev.filter((a) => !changed.has(artifactKey(a))), ...changed.values()]);
+      }
+      // A chapter read from the folder is already there as is; only a merge is new to it.
+      const toWrite = result.artifacts.filter(({ kind }) => !pending.fromFolder || kind === "merge");
+      if (toWrite.length && (await fsa.hasFolder())) {
+        try {
+          for (const { artifact } of toWrite) await fsa.writeArtifact(artifact);
+        } catch (e) {
+          toast(`Imported, but could not write to the folder: ${(e as Error).message}`, "error");
+        }
+      }
+      toast(describeImport(result.summary));
+    },
+    [toast],
+  );
+
+  /** Plan an import; apply it at once unless something needs the user's decision. */
+  const importArtifacts = useCallback(
+    async (found: Artifact[], label: string, fromFolder: boolean) => {
+      if (!found.length) return;
+      // Claimed before the first await: `pendingImport` state is only set after planning,
+      // so two overlapping calls would both pass a check on it and one plan would be lost.
+      if (importBusy.current) {
+        toast("Finish or cancel the open import first.", "error");
+        return;
+      }
+      importBusy.current = true;
+      let opened = false;
+      try {
+        const existing = await db.listArtifacts();
+        const have = new Set(existing.map(artifactKey));
+        const lines = new Map<string, Map<string, number>>();
+        for (const key of new Set(found.map(artifactKey))) {
+          if (!have.has(key)) continue;
+          const rows = await db.getUnitRecords(key);
+          lines.set(key, new Map(rows.flatMap((r) => (r.at ? [[r.uid, r.at] as const] : []))));
+        }
+        const chapters = new Map((await db.listJobs()).map((j) => [j.id, j.updatedAt]));
+        const plan = planImport(existing, found, { lines, chapters });
+        const pending: PendingImport = { plan, label, fromFolder };
+        if (hasDecisions(plan)) {
+          setPendingImport(pending);
+          opened = true; // released by apply or cancel
+        } else {
+          await applyImport(pending, defaultChoices(plan));
+        }
+      } finally {
+        if (!opened) importBusy.current = false;
+      }
+    },
+    [applyImport, toast],
+  );
+
+  const applyPendingImport = useCallback(
+    async (choices: ImportChoices) => {
+      if (!pendingImport) return;
+      try {
+        await applyImport(pendingImport, choices);
+      } catch (e) {
+        toast(`Import failed: ${(e as Error).message}`, "error");
+      }
+      setPendingImport(null);
+      importBusy.current = false;
+    },
+    [pendingImport, applyImport, toast],
+  );
+
+  const cancelPendingImport = useCallback(() => {
+    setPendingImport(null);
+    importBusy.current = false;
+    toast("Import cancelled — nothing was changed.");
+  }, [toast]);
+
   const addFiles = useCallback(
     async (files: File[]) => {
       const importedArtifacts: Artifact[] = [];
+      const artifactFiles: string[] = [];
       const noCharaMeta: string[] = [];
       for (const file of files) {
         const text = await file.text();
@@ -197,11 +326,13 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
               for (const item of parsed) {
                 importedArtifacts.push(parseArtifact(JSON.stringify(item), file.name));
               }
+              artifactFiles.push(file.name);
               continue;
             }
           }
           if (/\.tl\.json$/i.test(file.name) || /\.json$/i.test(file.name)) {
             importedArtifacts.push(parseArtifact(text, file.name));
+            artifactFiles.push(file.name);
             continue;
           }
           if (isBilingualHtml(file.name, text)) {
@@ -240,19 +371,13 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
 
       if (noCharaMeta.length) setMetaWarningFiles(noCharaMeta);
 
-      if (importedArtifacts.length) {
-        const existing = await db.listArtifacts();
-        const { artifacts: merged, conflicts: found } = mergeArtifacts([
-          ...existing,
-          ...importedArtifacts,
-        ]);
-        for (const a of merged) await db.putArtifact(a);
-        setArtifacts(merged);
-        setConflicts(found);
-        toast(`Imported ${importedArtifacts.length} translation file(s)`);
-      }
+      await importArtifacts(
+        importedArtifacts,
+        artifactFiles.length === 1 ? artifactFiles[0] : `${artifactFiles.length} files`,
+        false,
+      );
     },
-    [toast],
+    [toast, importArtifacts],
   );
 
   const updateSourceNote = useCallback(async (id: string, note: string) => {
@@ -349,32 +474,57 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     return addedCount;
   }, [sources]);
 
-  const importDictionary = useCallback(
-    async (data: Partial<Record<Lang, Record<string, string>>>): Promise<number> => {
-      let importedCount = 0;
-      setSettings((prev) => {
-        const currentDict = JSON.parse(
-          JSON.stringify(prev.dictionary ?? { en: {}, "zh-hans": {}, "zh-hant": {} }),
-        ) as Record<Lang, Record<string, string>>;
-        for (const lang of Object.keys(data) as Lang[]) {
-          const names = data[lang];
-          if (!names) continue;
-          if (!currentDict[lang]) currentDict[lang] = {};
-          for (const [disp, val] of Object.entries(names)) {
-            if (disp.trim() && val.trim()) {
-              currentDict[lang][disp.trim()] = val.trim();
-              importedCount++;
-            }
-          }
+  /** Apply a dictionary plan; a backup writes the folder first, so a failed write changes nothing. */
+  const applyDict = useCallback(
+    async (p: PendingDict, choices: DictChoices) => {
+      const before = settings.dictionary ?? {};
+      const after = resolveDict(before, p.plan, choices);
+      const change = describeDict(summarizeDict(before, after));
+      if (p.plan.mode === "backup") {
+        try {
+          await fsa.writeDictionary(serializeDictionary(after));
+        } catch (e) {
+          toast(`Could not write ${fsa.DICTIONARY_FILE}: ${(e as Error).message}`, "error");
+          return;
         }
-        const next = { ...prev, dictionary: currentDict };
-        void db.saveSettings(next);
-        return next;
-      });
-      return importedCount;
+      }
+      await saveSettings({ dictionary: after });
+      toast(
+        p.plan.mode === "backup"
+          ? `Backed up the dictionary to ${fsa.DICTIONARY_FILE} in ${p.label} (this browser: ${change}).`
+          : `Imported dictionary: ${change}.`,
+      );
     },
-    [],
+    [settings.dictionary, saveSettings, toast],
   );
+
+  const importDictionary = useCallback(
+    async (data: DictionaryData, label: string) => {
+      const plan = planDictImport(settings.dictionary ?? {}, data);
+      if (!plan.diffs.length) {
+        toast("The dictionary already has every entry in that file.");
+        return;
+      }
+      const pending = { plan, label };
+      if (hasDictDecisions(plan)) setPendingDict(pending);
+      else await applyDict(pending, defaultDictChoices(plan));
+    },
+    [settings.dictionary, applyDict, toast],
+  );
+
+  const applyPendingDict = useCallback(
+    async (choices: DictChoices) => {
+      if (!pendingDict) return;
+      await applyDict(pendingDict, choices);
+      setPendingDict(null);
+    },
+    [pendingDict, applyDict],
+  );
+
+  const cancelPendingDict = useCallback(() => {
+    setPendingDict(null);
+    toast("Cancelled — the dictionary was not changed.");
+  }, [toast]);
 
   const clearDictionary = useCallback(async (lang: Lang) => {
     setSettings((prev) => {
@@ -459,6 +609,37 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     }
   }, [toast, refreshFolderFiles]);
 
+  const backupDictionary = useCallback(async () => {
+    if (!(await fsa.hasFolder())) {
+      await connectFolder();
+      if (!(await fsa.hasFolder())) return; // picker cancelled
+    }
+    const label = (await fsa.restoreFolderName()) ?? "the folder";
+    const mine = settings.dictionary ?? {};
+    try {
+      const text = await fsa.readDictionaryText();
+      let file: DictionaryData = {};
+      if (text !== null) {
+        try {
+          file = parseDictionaryFile(text);
+        } catch (e) {
+          toast(`${fsa.DICTIONARY_FILE} in ${label} is ${(e as Error).message}, so it was left untouched.`, "error");
+          return;
+        }
+      }
+      const plan = planDictBackup(mine, file);
+      if (!plan.diffs.length) {
+        toast(text === null ? "The dictionary is empty — nothing to back up." : "The backup is already up to date.");
+        return;
+      }
+      const pending = { plan, label };
+      if (hasDictDecisions(plan)) setPendingDict(pending);
+      else await applyDict(pending, defaultDictChoices(plan));
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
+  }, [connectFolder, settings.dictionary, applyDict, toast]);
+
   const disconnectFolder = useCallback(async () => {
     await fsa.forgetFolder();
     setFolderName(null);
@@ -468,22 +649,20 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
   const syncFolder = useCallback(async () => {
     try {
       const found = await fsa.readArtifacts();
-      const existing = await db.listArtifacts();
-      const { artifacts: merged, conflicts: found2 } = mergeArtifacts([...existing, ...found]);
-      for (const a of merged) await db.putArtifact(a);
-      setArtifacts(merged);
-      setConflicts(found2);
-      toast(`Folder holds ${found.length} translation file(s)`);
+      if (!found.length) {
+        toast("The folder has no .tl.json files.");
+        return;
+      }
+      await importArtifacts(found, `from folder (${found.length} file${found.length === 1 ? "" : "s"})`, true);
     } catch (e) {
       toast((e as Error).message, "error");
     }
-  }, [toast]);
+  }, [toast, importArtifacts]);
 
   const loadFolderGroup = useCallback(
     async (group: Pick<BookGroup, "book" | "lang" | "artifactFiles" | "sourceFile">) => {
       try {
         let loadedSources = 0;
-        let loadedArtifacts = 0;
 
         if (group.sourceFile && !sources.some((s) => s.file === group.sourceFile)) {
           const html = await fsa.readFile(group.sourceFile);
@@ -504,28 +683,17 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
           }
         }
 
+        if (loadedSources) toast(`Loaded source ${group.sourceFile}.`);
+
         if (group.artifactFiles.length) {
           const found = await fsa.readArtifactsByNames(group.artifactFiles);
-          if (found.length) {
-            const existing = await db.listArtifacts();
-            const { artifacts: merged, conflicts: found2 } = mergeArtifacts([...existing, ...found]);
-            for (const a of merged) await db.putArtifact(a);
-            setArtifacts(merged);
-            setConflicts((prev) => [...prev, ...found2]);
-            loadedArtifacts = found.length;
-          }
+          await importArtifacts(found, `${group.book} (${group.lang}) from folder`, true);
         }
-
-        toast(
-          `Loaded ${group.book} (${group.lang}): ` +
-            `${loadedArtifacts} translation file(s)` +
-            (loadedSources ? `, 1 source file` : ``),
-        );
       } catch (e) {
         toast(`Failed to load ${group.book}: ${(e as Error).message}`, "error");
       }
     },
-    [sources, toast],
+    [sources, toast, importArtifacts],
   );
 
   const store: Store = {
@@ -541,7 +709,8 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     folderName,
     folderFiles,
     toasts,
-    conflicts,
+    pendingImport,
+    pendingDict,
     metaWarningFiles,
     reviewKey,
     reviewSelection,
@@ -559,6 +728,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     deleteDictionaryName,
     importCustomNamesToDictionary,
     importDictionary,
+    backupDictionary,
     clearDictionary,
     refreshJobs,
     saveArtifact,
@@ -570,7 +740,10 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     loadFolderGroup,
     freeBook,
     toast,
-    dismissConflicts: () => setConflicts([]),
+    applyPendingImport,
+    cancelPendingImport,
+    applyPendingDict,
+    cancelPendingDict,
     dismissMetaWarning: () => setMetaWarningFiles([]),
     activePreset: () => findPreset(settings.presets, settings.presetId),
     apiKey: (preset) =>

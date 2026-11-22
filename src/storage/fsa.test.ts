@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  DICTIONARY_FILE,
   listFilesIn,
+  readDictionaryTextFrom,
   readArtifactsByNamesFrom,
   readArtifactsFrom,
   writeArtifactTo,
@@ -27,7 +29,10 @@ function fakeFolder(initial: Record<string, string> = {}) {
     queryPermission: async () => "granted",
     requestPermission: async () => "granted",
     getFileHandle: async (name, opts) => {
-      if (!files.has(name) && opts?.create) files.set(name, "");
+      if (!files.has(name)) {
+        if (!opts?.create) throw Object.assign(new Error(`${name} not found`), { name: "NotFoundError" });
+        files.set(name, "");
+      }
       return fileHandle(name);
     },
     values: async function* () {
@@ -141,3 +146,15 @@ describe("folder sync", () => {
   });
 });
 
+describe("dictionary backup file", () => {
+  it("reads null when there is no backup yet", async () => {
+    const { dir } = fakeFolder();
+    expect(await readDictionaryTextFrom(dir)).toBeNull();
+  });
+
+  it("reads the backup when there is one, and is not mistaken for an artifact", async () => {
+    const { dir } = fakeFolder({ [DICTIONARY_FILE]: '{"en":{"花子":"Hanako"}}' });
+    expect(await readDictionaryTextFrom(dir)).toContain("Hanako");
+    expect(await readArtifactsFrom(dir)).toEqual([]);
+  });
+});

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { DictConflictDialog, ImportConflictDialog } from "./ConflictDialog";
 import { DictionaryView } from "./DictionaryView";
 import { LibraryView } from "./LibraryView";
 import { ReviewView } from "./ReviewView";
@@ -136,20 +137,22 @@ export function App() {
         {store.view === "settings" && <SettingsView />}
       </main>
 
-      {store.conflicts.length ? (
-        <div class="conflicts">
-          <strong>Merged duplicate translations</strong>
-          <ul>
-            {store.conflicts.map((c) => (
-              <li key={c.key}>
-                {c.chapter} ({c.lang}): kept the {c.kept.generatedAt >= c.dropped.generatedAt ? "newer" : "more complete"}{" "}
-                one from {c.kept.model || "unknown model"}.
-                {c.differentSource ? " Warning: the two were made from different versions of the book." : ""}
-              </li>
-            ))}
-          </ul>
-          <button onClick={store.dismissConflicts}>Dismiss</button>
-        </div>
+      {store.pendingImport ? (
+        <ImportConflictDialog
+          plan={store.pendingImport.plan}
+          label={store.pendingImport.label}
+          onApply={store.applyPendingImport}
+          onCancel={store.cancelPendingImport}
+        />
+      ) : null}
+
+      {store.pendingDict ? (
+        <DictConflictDialog
+          plan={store.pendingDict.plan}
+          label={store.pendingDict.label}
+          onApply={store.applyPendingDict}
+          onCancel={store.cancelPendingDict}
+        />
       ) : null}
 
       <div class="toasts">

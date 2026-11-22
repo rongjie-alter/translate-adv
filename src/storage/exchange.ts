@@ -469,7 +469,7 @@ export function mergeArtifacts(incoming: Artifact[]): MergeResult {
 }
 
 /** Prefer the more complete artifact; break ties by recency. */
-function pick(a: Artifact, b: Artifact): [Artifact, Artifact] {
+export function pick(a: Artifact, b: Artifact): [Artifact, Artifact] {
   const fa = filled(a);
   const fb = filled(b);
   if (fa !== fb) return fa > fb ? [a, b] : [b, a];
