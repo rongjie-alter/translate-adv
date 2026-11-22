@@ -21,9 +21,6 @@ import { artifactKey } from "./exchange";
 const DB_NAME = "translate-adv";
 const DB_VERSION = 2;
 
-/** Name translations keyed by target language, then by JP/canonical name. */
-export type DictionaryData = Partial<Record<Lang, Record<string, string>>>;
-
 export interface Settings {
   targetLang: Lang;
   presetId: string;
@@ -39,7 +36,7 @@ export interface Settings {
   /** Per-preset quota counters, so limits survive a reload. */
   limiter: Record<string, LimiterState>;
   /** Global dictionary of name translations, keyed by target language then JP/canonical name. */
-  dictionary?: DictionaryData;
+  dictionary?: Partial<Record<Lang, Record<string, string>>>;
   /** The summarizer's own model; independent of `presetId`, which only drives translation. */
   summaryPresetId: string;
   summaryLength: SummaryLength;
