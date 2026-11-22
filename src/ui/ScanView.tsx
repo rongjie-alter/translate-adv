@@ -9,7 +9,7 @@ import { estimateJob, estimateTokens } from "../llm/estimate";
 import { assembleSystemPrompt, glossaryBlock } from "../llm/prompt";
 import { serializeChunk } from "../scenario/serialize";
 import { makeLabelMap } from "../scenario/labels";
-import { LANGS, LANG_LABEL, type Book, type Chapter, type GlossaryEntry, type Lang } from "../scenario/model";
+import { LANG_LABEL, type Book, type Chapter, type GlossaryEntry, type Lang } from "../scenario/model";
 import { apiKeyMissing, type Preset } from "../llm/presets";
 import { canTranslateNames, knownNames, translateNames } from "../names/translateNames";
 import { chapterGlossary } from "../scenario/glossary";
@@ -95,24 +95,6 @@ export function ScanView({
             {store.settings.presets.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          Target language{" "}
-          <select
-            value={lang}
-            onChange={(e) =>
-              void store.saveSettings({
-                targetLang: (e.target as HTMLSelectElement).value as (typeof LANGS)[number],
-              })
-            }
-          >
-            {LANGS.map((l) => (
-              <option key={l} value={l}>
-                {LANG_LABEL[l]}
               </option>
             ))}
           </select>

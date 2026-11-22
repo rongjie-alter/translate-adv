@@ -1,12 +1,12 @@
 import { useMemo, useRef, useState } from "preact/hooks";
-import { LANGS, LANG_LABEL, type Lang } from "../scenario/model";
+import { LANGS, LANG_LABEL } from "../scenario/model";
 import { parseDictionaryFile, serializeDictionary } from "../storage/dictPlan";
 import * as fsa from "../storage/fsa";
 import { useStore } from "./store";
 
 export function DictionaryView() {
   const store = useStore();
-  const [lang, setLang] = useState<Lang>(store.settings.targetLang);
+  const lang = store.settings.targetLang;
   const [search, setSearch] = useState("");
   const [newJp, setNewJp] = useState("");
   const [newTl, setNewTl] = useState("");
@@ -121,17 +121,6 @@ export function DictionaryView() {
       </div>
 
       <div class="row dictionary-toolbar">
-        <select
-            value={lang}
-            onChange={(e) => setLang((e.target as HTMLSelectElement).value as Lang)}
-          >
-          {LANGS.map((l) => (
-            <option key={l} value={l}>
-              {LANG_LABEL[l]}
-            </option>
-          ))}
-        </select>
-
         <input
           type="search"
           class="dictionary-search"

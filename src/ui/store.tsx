@@ -106,6 +106,11 @@ export interface Store {
    * selection of forty lines must survive a trip to Settings for an API key.
    */
   reviewSelection: ReadonlySet<string>;
+  /**
+   * `normalizeBookBase` of every book translated, edited, reviewed or imported since this
+   * page loaded. Session-only on purpose: the Library opens exactly these groups.
+   */
+  touchedBooks: ReadonlySet<string>;
 
   setView(v: View): void;
   openReview(key: string | null): void;
@@ -182,7 +187,20 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
   const [reviewKey, setReviewKey] = useState<string | null>(null);
   const [reviewSelection, setReviewSelection] = useState<ReadonlySet<string>>(new Set());
 
+  const [touchedBooks, setTouchedBooks] = useState<ReadonlySet<string>>(new Set());
+
+  const touchBooks = useCallback((books: string[]) => {
+    setTouchedBooks((prev) => {
+      const bases = books.map(normalizeBookBase);
+      if (bases.every((b) => prev.has(b))) return prev;
+      return new Set([...prev, ...bases]);
+    });
+  }, []);
+
   const openReview = useCallback((key: string | null) => {
+    // Look the book up rather than parsing the key: names may themselves contain "::".
+    const book = key ? artifacts.find((a) => artifactKey(a) === key)?.book : undefined;
+    if (book) touchBooks([book]);
     // Unit ids are only meaningful within one chapter, so switching chapters
     // must not carry a selection across.
     setReviewKey((prev) => {
@@ -190,7 +208,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
       return key;
     });
     setView("review");
-  }, []);
+  }, [artifacts, touchBooks]);
 
   const toast = useCallback((message: string, kind: Toast["kind"] = "info") => {
     const t = { id: Date.now() + Math.random(), kind, message };
@@ -240,6 +258,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
       if (result.artifacts.length) {
         const changed = new Map(result.artifacts.map(({ artifact }) => [artifactKey(artifact), artifact]));
         setArtifacts((prev) => [...prev.filter((a) => !changed.has(artifactKey(a))), ...changed.values()]);
+        touchBooks(result.artifacts.map(({ artifact }) => artifact.book));
       }
       // A chapter read from the folder is already there as is; only a merge is new to it.
       const toWrite = result.artifacts.filter(({ kind }) => !pending.fromFolder || kind === "merge");
@@ -252,7 +271,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
       }
       toast(describeImport(result.summary));
     },
-    [toast],
+    [toast, touchBooks],
   );
 
   /** Plan an import; apply it at once unless something needs the user's decision. */
@@ -553,6 +572,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     async (a: Artifact) => {
       await db.putArtifact(a);
       setArtifacts((prev) => [...prev.filter((x) => artifactKey(x) !== artifactKey(a)), a]);
+      touchBooks([a.book]);
       if (await fsa.hasFolder()) {
         try {
           await fsa.writeArtifact(a);
@@ -561,7 +581,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
         }
       }
     },
-    [toast],
+    [toast, touchBooks],
   );
 
   const removeArtifact = useCallback(async (key: string) => {
@@ -714,6 +734,7 @@ export function StoreProvider({ children }: { children: ComponentChildren }) {
     metaWarningFiles,
     reviewKey,
     reviewSelection,
+    touchedBooks,
     setView,
     openReview,
     setReviewSelection,

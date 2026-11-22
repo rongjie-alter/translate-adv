@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { LANGS, LANG_LABEL, type Lang } from "../scenario/model";
 import { DictConflictDialog, ImportConflictDialog } from "./ConflictDialog";
 import { DictionaryView } from "./DictionaryView";
 import { LibraryView } from "./LibraryView";
@@ -94,6 +95,24 @@ export function App() {
           ))}
         </nav>
         <span class="spacer" />
+        <label class="header-lang">
+          <span>Target language</span>
+          <select
+            value={store.settings.targetLang}
+            aria-label="Target language"
+            onChange={(e) =>
+              void store.saveSettings({
+                targetLang: (e.target as HTMLSelectElement).value as Lang,
+              })
+            }
+          >
+            {LANGS.map((l) => (
+              <option key={l} value={l}>
+                {LANG_LABEL[l]}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           class="help-btn"
           aria-label="Help & Guide"
@@ -195,7 +214,7 @@ export function App() {
             Drag and drop the <code>.book.html</code> to <strong>Scan</strong> page
           </li>
           <li>
-            Choose model and language, customize additional context and name translation.
+            Choose model, customize additional context and name translation.
             <ul>
               <li>Gemini Flash lite is enough for special quest</li>
               <li>Main quest may benefit from Gemini Flash</li>

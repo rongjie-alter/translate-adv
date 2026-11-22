@@ -35,6 +35,26 @@ header {
 }
 header h1 { font-size: 1rem; margin: 0; letter-spacing: 0.02em; }
 nav { display: flex; gap: 0.25rem; }
+.header-lang { flex-direction: row; align-items: center; gap: 0.4rem; color: var(--muted); font-size: 0.85rem; }
+.header-lang select { color: var(--fg, inherit); }
+
+.book-group > .book-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.book-group > .book-head:hover:not(:disabled) { color: var(--accent); }
+.book-head .chev { display: inline-block; width: 1em; transition: transform 0.12s; color: var(--muted); }
+.book-head .chev.open { transform: rotate(90deg); }
+.book-head .meta { font-weight: 400; font-size: 0.85rem; color: var(--muted); }
+.book-body { margin-top: 0.75rem; }
 
 button {
   font: inherit;

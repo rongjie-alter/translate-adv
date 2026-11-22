@@ -1,5 +1,5 @@
 /**
- * API key, endpoint/model presets and their quotas, target language, prompt.
+ * API key, endpoint/model presets and their quotas, prompt.
  *
  * Free-tier limits change, so every number here is editable rather than hardcoded,
  * and users can add their own OpenAI-compatible endpoints.
@@ -7,7 +7,6 @@
 import { useState } from "preact/hooks";
 import { isLocalPreset, type Preset } from "../llm/presets";
 import { DEFAULT_SYSTEM_PROMPT } from "../llm/prompt";
-import { LANGS, LANG_LABEL, type Lang } from "../scenario/model";
 import { useStore } from "./store";
 
 const LIMIT_FIELDS: { key: keyof Preset["limits"]; label: string; hint: string }[] = [
@@ -161,22 +160,6 @@ export function SettingsView() {
       </p>
 
       <h2>Translation</h2>
-      <label>
-        Default target language
-        <select
-          value={settings.targetLang}
-          onChange={(e) =>
-            void store.saveSettings({ targetLang: (e.target as HTMLSelectElement).value as Lang })
-          }
-        >
-          {LANGS.map((l) => (
-            <option key={l} value={l}>
-              {LANG_LABEL[l]}
-            </option>
-          ))}
-        </select>
-      </label>
-
       <label class="prompt">
         System prompt
         <small class="hint">

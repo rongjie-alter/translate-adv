@@ -20,9 +20,22 @@ export function LibraryView() {
   const freeRef = useRef<HTMLDialogElement>(null);
   const [freeTarget, setFreeTarget] = useState<BookGroup | null>(null);
 
-  const groups = useMemo<BookGroup[]>(() => {
+  const lang = store.settings.targetLang;
+  /** Books the user opened or closed by hand; anything absent follows the session default. */
+  const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(new Map());
+
+  const allGroups = useMemo<BookGroup[]>(() => {
     return scanBookGroups(store.folderFiles, store.artifacts, store.sources);
   }, [store.folderFiles, store.artifacts, store.sources]);
+
+  // One language at a time, picked in the header: a book then has exactly one group.
+  const groups = useMemo(() => allGroups.filter((g) => g.lang === lang), [allGroups, lang]);
+  const otherLangCount = allGroups.length - groups.length;
+
+  const isOpen = (g: BookGroup) =>
+    toggled.get(groupKey(g)) ?? store.touchedBooks.has(normalizeBookBase(g.book));
+  const toggle = (g: BookGroup) =>
+    setToggled((prev) => new Map(prev).set(groupKey(g), !isOpen(g)));
 
   return (
     <section class="library">
@@ -106,8 +119,18 @@ export function LibraryView() {
 
       {!groups.length ? (
         <p class="empty">
-          Nothing here yet. Translate a chapter, or drop <code>.tl.json</code> files from other
-          people onto this page.
+          {otherLangCount ? (
+            <>
+              Nothing in {LANG_LABEL[lang] ?? lang} yet ({otherLangCount} book
+              {otherLangCount === 1 ? "" : "s"} in other languages — change the target language in
+              the header to see them).
+            </>
+          ) : (
+            <>
+              Nothing here yet. Translate a chapter, or drop <code>.tl.json</code> files from other
+              people onto this page.
+            </>
+          )}
         </p>
       ) : (
         <p class="hint">
@@ -117,21 +140,39 @@ export function LibraryView() {
       )}
 
       {groups.map((g) => {
+        const open = isOpen(g);
+        const head = (summary: string) => (
+          <button
+            class="book-head"
+            aria-expanded={open}
+            onClick={() => toggle(g)}
+            title={open ? "Collapse" : "Expand"}
+          >
+            <span class={open ? "chev open" : "chev"} aria-hidden="true">
+              ▸
+            </span>
+            <span>{g.book}</span>
+            <span class="meta">{summary}</span>
+          </button>
+        );
+
         if (!g.inDb) {
           return (
-            <div class="group" key={`${g.book}::${g.lang}`}>
-              <h3>
-                {g.book} — {LANG_LABEL[g.lang] ?? g.lang}
-              </h3>
-              <p class="hint">
-                Found in folder ({g.folderFiles.length} file{g.folderFiles.length === 1 ? "" : "s"}):{" "}
-                {g.folderFiles.join(", ")}
-              </p>
-              <div class="row">
-                <button onClick={() => void store.loadFolderGroup(g)}>
-                  Load into browser database
-                </button>
-              </div>
+            <div class="group book-group" key={groupKey(g)}>
+              {head("in folder, not loaded")}
+              {open ? (
+                <div class="book-body">
+                  <p class="hint">
+                    Found in folder ({g.folderFiles.length} file{g.folderFiles.length === 1 ? "" : "s"}):{" "}
+                    {g.folderFiles.join(", ")}
+                  </p>
+                  <div class="row">
+                    <button onClick={() => void store.loadFolderGroup(g)}>
+                      Load into browser database
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           );
         }
@@ -139,84 +180,89 @@ export function LibraryView() {
         const order = orderFor(g.book);
         const missing = order.filter((c) => !g.artifacts.some((a) => a.chapter === c));
         const isDone = missing.length === 0 && g.artifacts.every((a) => !a.incomplete?.length);
+        const summary = `${g.artifacts.length}${order.length ? ` / ${order.length}` : ""} chapter${
+          g.artifacts.length === 1 && !order.length ? "" : "s"
+        }${isDone ? " · done" : ""}`;
         return (
-          <div class="group" key={`${g.book}::${g.lang}`}>
-            <h3>
-              {g.book} — {LANG_LABEL[g.lang] ?? g.lang}
-            </h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Chapter</th>
-                  <th class="num">Lines</th>
-                  <th>Model</th>
-                  <th>Translated</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {g.artifacts.map((a) => (
-                  <tr key={artifactKey(a)}>
-                    <td>{a.chapter}</td>
-                    <td class="num">
-                      {a.units.length}
-                      {a.incomplete?.length ? (
-                        <span class="warn"> ({a.incomplete.length} missing)</span>
-                      ) : null}
-                    </td>
-                    <td>{a.model}</td>
-                    <td>{a.generatedAt ? new Date(a.generatedAt).toLocaleDateString() : "—"}</td>
-                    <td class="actions">
-                      <button onClick={() => store.openReview(artifactKey(a))}>Review</button>
-                      <button onClick={() => download(artifactFileName(a), serializeArtifact(a))}>
-                        Export
-                      </button>
-                      <button class="danger" onClick={() => void store.removeArtifact(artifactKey(a))}>
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div class="group book-group" key={groupKey(g)}>
+            {head(summary)}
+            {open ? (
+              <div class="book-body">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Chapter</th>
+                      <th class="num">Lines</th>
+                      <th>Model</th>
+                      <th>Translated</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {g.artifacts.map((a) => (
+                      <tr key={artifactKey(a)}>
+                        <td>{a.chapter}</td>
+                        <td class="num">
+                          {a.units.length}
+                          {a.incomplete?.length ? (
+                            <span class="warn"> ({a.incomplete.length} missing)</span>
+                          ) : null}
+                        </td>
+                        <td>{a.model}</td>
+                        <td>{a.generatedAt ? new Date(a.generatedAt).toLocaleDateString() : "—"}</td>
+                        <td class="actions">
+                          <button onClick={() => store.openReview(artifactKey(a))}>Review</button>
+                          <button onClick={() => download(artifactFileName(a), serializeArtifact(a))}>
+                            Export
+                          </button>
+                          <button class="danger" onClick={() => void store.removeArtifact(artifactKey(a))}>
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
 
-            {missing.length ? (
-              <p class="hint">Still missing: {missing.join(", ")}</p>
+                {missing.length ? (
+                  <p class="hint">Still missing: {missing.join(", ")}</p>
+                ) : null}
+
+                <div class="row">
+                  <button onClick={() => void combine(g, false)}>Merge to bilingual HTML</button>
+                  {store.folderName ? (
+                    <button
+                      onClick={() => void combine(g, true)}
+                      title="Merge & write to folder"
+                    >
+                      Merge & Write to folder
+                    </button>
+                  ) : null}
+                  <button
+                    onClick={() =>
+                      download(
+                        `${normalizeBookBase(g.book)}.${g.lang}.bundle.json`,
+                        JSON.stringify(g.artifacts, null, 1),
+                      )
+                    }
+                    title="Export all translated chapters to a bundle file"
+                  >
+                    Export All
+                  </button>
+                  {isDone ? (
+                    <button
+                      class="danger"
+                      onClick={() => {
+                        setFreeTarget(g);
+                        freeRef.current?.showModal();
+                      }}
+                    >
+                      Free from browser database
+                    </button>
+                  ) : null}
+                </div>
+              </div>
             ) : null}
-
-            <div class="row">
-              <button onClick={() => void combine(g, false)}>Merge to bilingual HTML</button>
-              {store.folderName ? (
-                <button
-                  onClick={() => void combine(g, true)}
-                  title="Merge & write to folder"
-                >
-                  Merge & Write to folder
-                </button>
-              ) : null}
-              <button
-                onClick={() =>
-                  download(
-                    `${normalizeBookBase(g.book)}.${g.lang}.bundle.json`,
-                    JSON.stringify(g.artifacts, null, 1),
-                  )
-                }
-                title="Export all translated chapters to a bundle file"
-              >
-                Export All
-              </button>
-              {isDone ? (
-                <button
-                  class="danger"
-                  onClick={() => {
-                    setFreeTarget(g);
-                    freeRef.current?.showModal();
-                  }}
-                >
-                  Free from browser database
-                </button>
-              ) : null}
-            </div>
           </div>
         );
       })}
@@ -258,6 +304,10 @@ export function LibraryView() {
       store.toast((e as Error).message, "error");
     }
   }
+}
+
+function groupKey(g: BookGroup): string {
+  return `${normalizeBookBase(g.book)}::${g.lang}`;
 }
 
 function download(name: string, contents: string) {
